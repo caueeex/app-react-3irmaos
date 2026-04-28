@@ -1,4 +1,5 @@
 export type RootStackParamList = {
+  Boot: undefined;
   Login: undefined;
   Main: undefined;
   Chatbot: undefined;

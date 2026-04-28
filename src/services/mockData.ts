@@ -50,9 +50,6 @@ function matchesFilters(item: InventoryItem, f: InventoryFilters): boolean {
   if (mTo && m > startOfDay(mTo)) return false;
   if (eFrom && e < startOfDay(eFrom)) return false;
   if (eTo && e > startOfDay(eTo)) return false;
-  if (f.category && f.category !== 'Todas' && item.category !== f.category) {
-    return false;
-  }
   if (f.lotOrRfid) {
     const q = f.lotOrRfid.trim().toLowerCase();
     const hay = `${item.lot} ${item.rfid ?? ''}`.toLowerCase();

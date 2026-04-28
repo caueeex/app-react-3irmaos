@@ -4,6 +4,7 @@ import {
   NavigationContainer,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { ActivityIndicator, View } from 'react-native';
 import { useMemo } from 'react';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { useThemeMode } from '../context/ThemeModeContext';
@@ -24,11 +25,22 @@ function MainWithFilters() {
   );
 }
 
+function BootPlaceholder() {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <ActivityIndicator size="large" />
+    </View>
+  );
+}
+
 function StackRoutes() {
-  const { user } = useAuth();
+  const { user, sessionReady } = useAuth();
+
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {!user ? (
+      {!sessionReady ? (
+        <Stack.Screen name="Boot" component={BootPlaceholder} />
+      ) : !user ? (
         <Stack.Screen name="Login" component={LoginScreen} />
       ) : (
         <>

@@ -1,3 +1,4 @@
+import type { TextInputProps } from 'react-native';
 import styled, { useTheme } from 'styled-components/native';
 
 const Wrap = styled.View`
@@ -27,7 +28,10 @@ type Props = {
   placeholder?: string;
   editable?: boolean;
   onPressIn?: () => void;
-};
+} & Pick<
+  TextInputProps,
+  'secureTextEntry' | 'autoCapitalize' | 'autoCorrect' | 'keyboardType'
+>;
 
 export function AppTextInput({
   label,
@@ -36,6 +40,10 @@ export function AppTextInput({
   placeholder,
   editable = true,
   onPressIn,
+  secureTextEntry,
+  autoCapitalize,
+  autoCorrect,
+  keyboardType,
 }: Props) {
   const theme = useTheme();
   return (
@@ -48,6 +56,10 @@ export function AppTextInput({
         placeholderTextColor={theme.colors.textMuted}
         editable={editable}
         onPressIn={onPressIn}
+        secureTextEntry={secureTextEntry}
+        autoCapitalize={autoCapitalize}
+        autoCorrect={autoCorrect}
+        keyboardType={keyboardType}
       />
     </Wrap>
   );

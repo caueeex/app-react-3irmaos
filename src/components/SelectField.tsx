@@ -1,6 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
+import {
+  Dimensions,
+  Modal,
+  Pressable,
+  ScrollView,
+  View,
+} from 'react-native';
 import styled, { useTheme } from 'styled-components/native';
+
+const WINDOW_H = Dimensions.get('window').height;
+/** RN não resolve % sem altura no pai — modal “em branco” no bottom sheet. */
+const SHEET_MAX_H = Math.min(Math.round(WINDOW_H * 0.55), 420);
 
 const Wrap = styled.View`
   gap: 6px;
@@ -38,7 +48,6 @@ const SheetCard = styled.View`
   border-top-left-radius: ${({ theme }) => theme.radii.xl}px;
   border-top-right-radius: ${({ theme }) => theme.radii.xl}px;
   padding: ${({ theme }) => theme.spacing(4)}px;
-  max-height: 70%;
   border-width: 1px;
   border-color: ${({ theme }) => theme.colors.border};
 `;
@@ -97,21 +106,33 @@ export function SelectField({
               left: 0,
               right: 0,
               bottom: 0,
+              maxHeight: SHEET_MAX_H + 24,
             }}
           >
-            <SheetCard>
-              <ScrollView>
-                {options.map((opt) => (
-                  <Option
-                    key={opt}
-                    onPress={() => {
-                      onChange(opt);
-                      onOpenChange(false);
-                    }}
-                  >
-                    <OptionText>{opt}</OptionText>
-                  </Option>
-                ))}
+            <SheetCard style={{ maxHeight: SHEET_MAX_H, minHeight: 120 }}>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                style={{ maxHeight: SHEET_MAX_H - 24 }}
+                contentContainerStyle={{ paddingBottom: 8 }}
+              >
+                {options.length === 0 ? (
+                  <OptionText style={{ opacity: 0.75, paddingVertical: 12 }}>
+                    Nenhuma opção disponível.
+                  </OptionText>
+                ) : (
+                  options.map((opt, index) => (
+                    <Option
+                      key={`${index}:${opt}`}
+                      onPress={() => {
+                        onChange(opt);
+                        onOpenChange(false);
+                      }}
+                    >
+                      <OptionText>{opt}</OptionText>
+                    </Option>
+                  ))
+                )}
               </ScrollView>
             </SheetCard>
           </View>

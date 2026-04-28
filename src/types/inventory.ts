@@ -17,7 +17,6 @@ export interface InventoryFilters {
   manufactureTo?: string;
   expiryFrom?: string;
   expiryTo?: string;
-  category?: string;
   lotOrRfid?: string;
 }
 

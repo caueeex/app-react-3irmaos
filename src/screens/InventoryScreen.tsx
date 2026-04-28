@@ -1,11 +1,21 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { ActivityIndicator, FlatList, RefreshControl, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  View,
+} from 'react-native';
 import styled, { useTheme } from 'styled-components/native';
+import { AppTextInput } from '../components/AppTextInput';
+import { Button } from '../components/Button';
+import { Card } from '../components/Card';
 import { CHAT_FAB_SCROLL_PADDING, ChatFab } from '../components/ChatFab';
+import { DateField } from '../components/DateField';
 import { EmptyState } from '../components/EmptyState';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { SectionTitle } from '../components/SectionTitle';
 import { ValidityBadge } from '../components/ValidityBadge';
-import { useInventoryFilters } from '../context/InventoryFiltersContext';
+import { useInventoryTabFilters } from '../context/InventoryFiltersContext';
 import { useDashboard } from '../hooks/useDashboard';
 import type { InventoryItem } from '../types/inventory';
 import { formatDisplayDate } from '../utils/date';
@@ -18,6 +28,23 @@ const Page = styled.View`
 
 const HeaderPad = styled.View`
   padding-horizontal: ${({ theme }) => theme.spacing(4)}px;
+`;
+
+const Grid = styled.View`
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: ${({ theme }) => theme.spacing(3)}px;
+`;
+
+const Half = styled.View`
+  flex-basis: 48%;
+  flex-grow: 1;
+`;
+
+const FilterRow = styled.View`
+  flex-direction: row;
+  gap: ${({ theme }) => theme.spacing(2)}px;
+  margin-top: ${({ theme }) => theme.spacing(3)}px;
 `;
 
 const Row = styled.View`
@@ -63,7 +90,8 @@ const Chip = styled.Text`
 export function InventoryScreen() {
   const styledTheme = useTheme();
   const tabBarHeight = useBottomTabBarHeight();
-  const { applied } = useInventoryFilters();
+  const { draft, applied, setDraftField, applyDraft, reset } =
+    useInventoryTabFilters();
   const query = useDashboard(applied);
 
   const renderItem = ({ item }: { item: InventoryItem }) => {
@@ -94,9 +122,60 @@ export function InventoryScreen() {
         ListHeaderComponent={
           <HeaderPad>
             <ScreenHeader />
-            <Title style={{ marginTop: 8 }}>Inventário filtrado</Title>
+            <Card style={{ marginTop: 12 }}>
+              <SectionTitle
+                title="Filtros do inventário"
+              />
+              <Grid>
+                <Half>
+                  <DateField
+                    label="Fabricação (de)"
+                    value={draft.manufactureFrom}
+                    onChange={(v) => setDraftField('manufactureFrom', v)}
+                  />
+                </Half>
+                <Half>
+                  <DateField
+                    label="Fabricação (até)"
+                    value={draft.manufactureTo}
+                    onChange={(v) => setDraftField('manufactureTo', v)}
+                  />
+                </Half>
+                <Half>
+                  <DateField
+                    label="Validade (de)"
+                    value={draft.expiryFrom}
+                    onChange={(v) => setDraftField('expiryFrom', v)}
+                  />
+                </Half>
+                <Half>
+                  <DateField
+                    label="Validade (até)"
+                    value={draft.expiryTo}
+                    onChange={(v) => setDraftField('expiryTo', v)}
+                  />
+                </Half>
+              </Grid>
+              <View style={{ height: 12 }} />
+              <AppTextInput
+                label="Lote / RFID"
+                placeholder="Buscar por lote ou RFID"
+                value={draft.lotOrRfid ?? ''}
+                onChangeText={(t) => setDraftField('lotOrRfid', t)}
+              />
+              <FilterRow>
+                <View style={{ flex: 1 }}>
+                  <Button title="Aplicar filtros" onPress={applyDraft} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Button title="Limpar" variant="secondary" onPress={reset} />
+                </View>
+              </FilterRow>
+            </Card>
+            <Title style={{ marginTop: 16 }}>Itens</Title>
             <Sub>
-              Os mesmos filtros aplicados na aba Início são usados aqui.
+              {query.data?.items.length ?? 0} resultado(s) com os filtros
+              aplicados nesta aba.
             </Sub>
             {query.isPending && !query.data ? (
               <View style={{ paddingVertical: 24, alignItems: 'center' }}>
@@ -112,7 +191,7 @@ export function InventoryScreen() {
           query.isPending ? null : (
             <EmptyState
               title="Sem itens"
-              description="Ajuste os filtros na aba Início para ver mais resultados."
+              description="Ajuste os filtros acima ou toque em Limpar para ver todos os itens disponíveis."
               icon="cube-outline"
             />
           )

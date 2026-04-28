@@ -1,5 +1,5 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,8 +24,8 @@ import { SectionTitle } from '../components/SectionTitle';
 import { SelectField } from '../components/SelectField';
 import { CHAT_FAB_SCROLL_PADDING, ChatFab } from '../components/ChatFab';
 import { ValidityBadge } from '../components/ValidityBadge';
-import { useInventoryFilters } from '../context/InventoryFiltersContext';
-import { useCategories, useDashboard } from '../hooks/useDashboard';
+import { useDashboardFilters } from '../context/InventoryFiltersContext';
+import { useDashboard } from '../hooks/useDashboard';
 import { formatDisplayDate } from '../utils/date';
 import { daysUntilExpiry } from '../utils/validity';
 
@@ -141,26 +141,14 @@ export function DashboardScreen() {
   const styledTheme = useTheme();
   const tabBarHeight = useBottomTabBarHeight();
   const { draft, applied, setDraftField, applyDraft, reset } =
-    useInventoryFilters();
+    useDashboardFilters();
   const dashboard = useDashboard(applied);
-  const categoriesQuery = useCategories();
 
-  const [categoryOpen, setCategoryOpen] = useState(false);
   const [reportTypeOpen, setReportTypeOpen] = useState(false);
   const [periodOpen, setPeriodOpen] = useState(false);
 
   const [reportType, setReportType] = useState(REPORT_TYPES[0]);
   const [period, setPeriod] = useState(PERIODS[0]);
-
-  const categoryOptions = categoriesQuery.data ?? ['Todas'];
-
-  useEffect(() => {
-    if (!draft.category) {
-      setDraftField('category', 'Todas');
-    }
-  }, [draft.category, setDraftField]);
-
-  const categoryValue = draft.category ?? 'Todas';
 
   const previewText = useMemo(() => {
     const lines = [
@@ -232,15 +220,6 @@ export function DashboardScreen() {
             </Half>
           </Grid>
           <View style={{ height: 12 }} />
-          <SelectField
-            label="Categoria"
-            value={categoryValue}
-            options={categoryOptions}
-            onChange={(v) => setDraftField('category', v)}
-            open={categoryOpen}
-            onOpenChange={setCategoryOpen}
-          />
-          <View style={{ height: 12 }} />
           <AppTextInput
             label="Lote / RFID"
             placeholder="Buscar por lote ou RFID"
@@ -311,7 +290,7 @@ export function DashboardScreen() {
             <Card style={{ marginTop: 16 }}>
               <SectionTitle
                 title="Relatório de movimentação"
-                subtitle="Entradas e saídas por dia da semana (mock)."
+                subtitle="Entradas e saídas por semana do mês (API /api/dashboard)."
               />
               <MovementLineChart data={dashboard.data} />
             </Card>

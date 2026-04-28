@@ -10,7 +10,7 @@ import type { InventoryFilters } from '../types/inventory';
 
 const empty: InventoryFilters = {};
 
-type Value = {
+type FiltersSlice = {
   draft: InventoryFilters;
   applied: InventoryFilters;
   setDraft: (patch: Partial<InventoryFilters>) => void;
@@ -22,13 +22,16 @@ type Value = {
   reset: () => void;
 };
 
+type Value = {
+  /** Aba Início (dashboard) */
+  dashboard: FiltersSlice;
+  /** Aba Inventário — independente da aba Início */
+  inventoryTab: FiltersSlice;
+};
+
 const Ctx = createContext<Value | undefined>(undefined);
 
-export function InventoryFiltersProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
+function useSliceState(): FiltersSlice {
   const [draft, setDraftState] = useState<InventoryFilters>(empty);
   const [applied, setApplied] = useState<InventoryFilters>(empty);
 
@@ -52,7 +55,7 @@ export function InventoryFiltersProvider({
     setApplied(empty);
   }, []);
 
-  const value = useMemo(
+  return useMemo(
     () => ({
       draft,
       applied,
@@ -63,12 +66,35 @@ export function InventoryFiltersProvider({
     }),
     [draft, applied, setDraft, setDraftField, applyDraft, reset],
   );
+}
+
+export function InventoryFiltersProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const dashboard = useSliceState();
+  const inventoryTab = useSliceState();
+
+  const value = useMemo(
+    () => ({
+      dashboard,
+      inventoryTab,
+    }),
+    [dashboard, inventoryTab],
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-export function useInventoryFilters() {
+export function useDashboardFilters() {
   const v = useContext(Ctx);
-  if (!v) throw new Error('useInventoryFilters requires provider');
-  return v;
+  if (!v) throw new Error('useDashboardFilters requires InventoryFiltersProvider');
+  return v.dashboard;
+}
+
+export function useInventoryTabFilters() {
+  const v = useContext(Ctx);
+  if (!v) throw new Error('useInventoryTabFilters requires InventoryFiltersProvider');
+  return v.inventoryTab;
 }

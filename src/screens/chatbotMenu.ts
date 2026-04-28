@@ -1,38 +1,17 @@
-/** Opções do menu inicial — textos e respostas stub até integrar API. */
+import type { ChatProduto } from '../services/api';
+
 export const CHATBOT_ASSISTANT_NAME = 'Assistente 3IRMÃOS';
 
-export type MenuOption = {
-  key: string;
-  title: string;
-  stubReply: string;
-};
-
-export const CHATBOT_MENU_OPTIONS: MenuOption[] = [
-  {
-    key: '1',
-    title: 'Informações gerais e pedidos',
-    stubReply:
-      'Você escolheu informações gerais e pedidos. Em breve esta opção consultará o sistema em tempo real. Por enquanto, registre seu pedido com o setor comercial.',
-  },
-  {
-    key: '2',
-    title: 'Orçamento',
-    stubReply:
-      'Você escolheu orçamento. A integração com orçamentos e propostas será ligada aqui. Entre em contato com o comercial para valores e prazos.',
-  },
-  {
-    key: '3',
-    title: 'Estoque e movimentação',
-    stubReply:
-      'Você escolheu estoque e movimentação. Esta trilha mostrará saldos, lotes e alertas como no painel principal. Use a aba Início no app enquanto a API do chat não estiver ativa.',
-  },
-  {
-    key: '4',
-    title: 'Outros assuntos',
-    stubReply:
-      'Você escolheu outros assuntos. Descreva sua necessidade ao time de TI ou ao seu gestor; o canal completo de atendimento será conectado em seguida.',
-  },
-];
+/** Menu principal (texto exibido no chat). */
+export function buildMainMenuPrompt(): string {
+  return (
+    `O que você deseja saber?\n\n` +
+    `1. Quantidade\n` +
+    `2. Produtos em Risco\n` +
+    `3. Entradas e Saídas\n` +
+    `4. Perdas`
+  );
+}
 
 export function buildWelcomeMessage(displayName: string): string {
   const account =
@@ -40,8 +19,45 @@ export function buildWelcomeMessage(displayName: string): string {
       ? `\nConta conectada: ${displayName.trim()}.`
       : '';
   return (
-    `Olá! Eu me chamo ${CHATBOT_ASSISTANT_NAME}. O que gostaria de saber?${account}\n\n` +
-    `Escolha uma opção (toque em um dos botões ou digite o número no campo abaixo):\n\n` +
-    CHATBOT_MENU_OPTIONS.map((o) => `${o.key} — ${o.title}`).join('\n')
+    `Olá! Eu me chamo ${CHATBOT_ASSISTANT_NAME}.${account}\n\n` +
+    `${buildMainMenuPrompt()}\n\n` +
+    `Toque nos botões ou digite o número do menu (quando vir “Exportar Excel”, use o botão ou * no campo).`
+  );
+}
+
+/**
+ * Pergunta ao escolher produto — nomes aparecem só nos chips (evita lista duplicada).
+ */
+export function buildProductPickerText(produtos: ChatProduto[]): string {
+  const n = produtos.length;
+  const hint =
+    n === 0
+      ? ''
+      : `\n\nAbaixo há um campo de busca e uma lista rolável com ${n} produto${n === 1 ? '' : 's'} — toque no nome ou use o número no rodapé.`;
+  return (
+    `De qual produto?\n\n` +
+    `Exportar Excel — use o botão com ícone ou digite * no campo.\n` +
+    `Voltar ao menu — botão ou digite 0\n` +
+    `1 — Visão geral (todos os produtos)` +
+    hint
+  );
+}
+
+/** Após escolher opção 3 — submenu antes de filtrar por produto. */
+export function buildMovSubmenuText(): string {
+  return (
+    `Escolha uma ação:\n\n` +
+    `Exportar Excel — botão com ícone ou *\n` +
+    `Voltar ao menu — botão ou digite 0\n` +
+    `1 — Entradas por produto\n` +
+    `2 — Saídas por produto`
+  );
+}
+
+/** Rodapé após respostas que oferecem exportação (ex.: Perdas). */
+export function buildExportFooter(): string {
+  return (
+    `Exportar Excel — botão com ícone ou *\n` +
+    `Voltar ao menu — botão ou digite 0`
   );
 }
