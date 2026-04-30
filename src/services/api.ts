@@ -56,7 +56,7 @@ export function formatLoginOrConnectionError(
 
     return {
       title: 'Sem conexão com o servidor',
-      message: `O app tentou falar com:\n${resolvedApiBaseURL}\n\ne não obteve resposta (rede / firewall / backend desligado).${tunnelHint}`,
+      message: `O app tentou falar com:\n${resolvedApiBaseURL}\n\ne não obteve resposta (rede / firewall / backend desligado).\n\nEm dados móveis, algumas operadoras bloqueiam portas como a 3000 — experimente Wi‑Fi ou use a API em HTTPS na porta 443.${tunnelHint}`,
     };
   }
 

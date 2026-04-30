@@ -1,5 +1,10 @@
 import dotenv from 'dotenv';
-dotenv.config();
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// PM2 cwd costuma ser ~/ ou outro — carrega sempre backend/.env
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 import { createClient } from '@supabase/supabase-js';
 

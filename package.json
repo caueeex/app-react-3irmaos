@@ -9,7 +9,8 @@
     "web": "expo start --web",
     "backend": "npm --prefix backend start",
     "backend:install": "npm --prefix backend install",
-    "backend:test": "npm --prefix backend test"
+    "backend:test": "npm --prefix backend test",
+    "build:apk": "eas build --platform android --profile preview"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
