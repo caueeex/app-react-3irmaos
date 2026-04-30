@@ -9,7 +9,7 @@ export function buildMainMenuPrompt(): string {
     `1. Quantidade\n` +
     `2. Produtos em Risco\n` +
     `3. Entradas e Saídas\n` +
-    `4. Perdas`
+    `4. Perdas / produtos vencidos`
   );
 }
 

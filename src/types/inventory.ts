@@ -18,12 +18,16 @@ export interface InventoryFilters {
   expiryFrom?: string;
   expiryTo?: string;
   lotOrRfid?: string;
+  /** Nome parcial do produto (mesmo filtro da API web). */
+  categoria?: string;
 }
 
 export interface MovementPoint {
   label: string;
   inflow: number;
   outflow: number;
+  /** Movimentações tipo PERDA no período (por semana). */
+  losses: number;
 }
 
 export interface StockOverviewPoint {
@@ -42,6 +46,12 @@ export interface DashboardPayload {
   itemsForDelivery: number;
   totalItems: number;
   criticalItems: number;
+  /** Pacotes com validade já ultrapassada (inventário filtrado). */
+  expiredItems: number;
+  /** Entradas − saídas no mês atual (mesma base do gráfico de movimentação). */
+  stockDeltaMonth: number;
+  /** Total de registros PERDA no mês atual. */
+  lossesMonthTotal: number;
   stockOverview: StockOverviewPoint[];
   validityBuckets: ValidityBuckets;
   movement: MovementPoint[];

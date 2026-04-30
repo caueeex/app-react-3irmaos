@@ -1,10 +1,14 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
+  Pressable,
   RefreshControl,
   ScrollView,
+  Text,
   View,
 } from 'react-native';
 import styled, { useTheme } from 'styled-components/native';
@@ -12,7 +16,9 @@ import { AppTextInput } from '../components/AppTextInput';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import {
-  MovementLineChart,
+  ExpiredItemsBarChart,
+  MovementGroupedBarChart,
+  PerdasWeeklyBarChart,
   StockOverviewChart,
   ValidityBarChart,
 } from '../components/DashboardCharts';
@@ -137,9 +143,15 @@ const REPORT_TYPES = [
 
 const PERIODS = ['Últimos 7 dias', 'Últimos 30 dias', 'Trimestre atual'];
 
+/** Largura dos gráficos de barras (scroll + card); evita hook só para dimensão. */
+function alertPanelChartWidth(): number {
+  return Math.max(280, Dimensions.get('window').width - 40);
+}
+
 export function DashboardScreen() {
   const styledTheme = useTheme();
   const tabBarHeight = useBottomTabBarHeight();
+  const alertChartsW = alertPanelChartWidth();
   const { draft, applied, setDraftField, applyDraft, reset } =
     useDashboardFilters();
   const dashboard = useDashboard(applied);
@@ -149,6 +161,7 @@ export function DashboardScreen() {
 
   const [reportType, setReportType] = useState(REPORT_TYPES[0]);
   const [period, setPeriod] = useState(PERIODS[0]);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   const previewText = useMemo(() => {
     const lines = [
@@ -185,55 +198,97 @@ export function DashboardScreen() {
         </FadeInView>
 
         <Card style={{ marginTop: 12 }}>
-          <SectionTitle
-            title="Filtros"
-            subtitle="Refine os dados exibidos nos cartões e listas."
-          />
-          <Grid>
-            <Half>
-              <DateField
-                label="Fabricação (de)"
-                value={draft.manufactureFrom}
-                onChange={(v) => setDraftField('manufactureFrom', v)}
+          <Pressable
+            onPress={() => setFiltersExpanded((open) => !open)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              filtersExpanded ? 'Recolher filtros' : 'Expandir filtros'
+            }
+          >
+            <SectionTitle
+              title="Filtros"
+              subtitle={
+                filtersExpanded
+                  ? 'Refine os dados exibidos nos cartões e listas.'
+                  : 'Toque aqui ou em Filtrar para abrir as opções.'
+              }
+              right={
+                <Ionicons
+                  name={filtersExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={22}
+                  color={styledTheme.colors.textMuted}
+                />
+              }
+            />
+          </Pressable>
+          {!filtersExpanded ? (
+            <Button
+              title="Filtrar"
+              onPress={() => setFiltersExpanded(true)}
+            />
+          ) : (
+            <>
+              <Grid>
+                <Half>
+                  <DateField
+                    label="Fabricação (de)"
+                    value={draft.manufactureFrom}
+                    onChange={(v) => setDraftField('manufactureFrom', v)}
+                  />
+                </Half>
+                <Half>
+                  <DateField
+                    label="Fabricação (até)"
+                    value={draft.manufactureTo}
+                    onChange={(v) => setDraftField('manufactureTo', v)}
+                  />
+                </Half>
+                <Half>
+                  <DateField
+                    label="Validade (de)"
+                    value={draft.expiryFrom}
+                    onChange={(v) => setDraftField('expiryFrom', v)}
+                  />
+                </Half>
+                <Half>
+                  <DateField
+                    label="Validade (até)"
+                    value={draft.expiryTo}
+                    onChange={(v) => setDraftField('expiryTo', v)}
+                  />
+                </Half>
+              </Grid>
+              <View style={{ height: 12 }} />
+              <AppTextInput
+                label="Categoria (produto)"
+                placeholder="Nome parcial do produto"
+                value={draft.categoria ?? ''}
+                onChangeText={(txt) => setDraftField('categoria', txt)}
               />
-            </Half>
-            <Half>
-              <DateField
-                label="Fabricação (até)"
-                value={draft.manufactureTo}
-                onChange={(v) => setDraftField('manufactureTo', v)}
+              <View style={{ height: 12 }} />
+              <AppTextInput
+                label="Lote / RFID"
+                placeholder="Buscar por lote ou RFID"
+                value={draft.lotOrRfid ?? ''}
+                onChangeText={(txt) => setDraftField('lotOrRfid', txt)}
               />
-            </Half>
-            <Half>
-              <DateField
-                label="Validade (de)"
-                value={draft.expiryFrom}
-                onChange={(v) => setDraftField('expiryFrom', v)}
-              />
-            </Half>
-            <Half>
-              <DateField
-                label="Validade (até)"
-                value={draft.expiryTo}
-                onChange={(v) => setDraftField('expiryTo', v)}
-              />
-            </Half>
-          </Grid>
-          <View style={{ height: 12 }} />
-          <AppTextInput
-            label="Lote / RFID"
-            placeholder="Buscar por lote ou RFID"
-            value={draft.lotOrRfid ?? ''}
-            onChangeText={(t) => setDraftField('lotOrRfid', t)}
-          />
-          <Row>
-            <View style={{ flex: 1 }}>
-              <Button title="Aplicar filtros" onPress={applyDraft} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Button title="Limpar" variant="secondary" onPress={reset} />
-            </View>
-          </Row>
+              <Row>
+                <View style={{ flex: 1 }}>
+                  <Button title="Aplicar filtros" onPress={applyDraft} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Button title="Limpar" variant="secondary" onPress={reset} />
+                </View>
+              </Row>
+              <View style={{ marginTop: 12 }}>
+                <Button
+                  title="Fechar"
+                  variant="ghost"
+                  onPress={() => setFiltersExpanded(false)}
+                />
+              </View>
+            </>
+          )}
         </Card>
 
         {dashboard.isPending && !dashboard.data ? (
@@ -247,8 +302,71 @@ export function DashboardScreen() {
           <>
             <Card style={{ marginTop: 16 }}>
               <SectionTitle
-                title="Visão geral do estoque"
-                subtitle="Acompanhe volume e tendência."
+                title="Painel de alertas"
+                subtitle="Validade próxima e itens vencidos (reflete os filtros aplicados)."
+              />
+              <View
+                style={{
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  gap: 18,
+                  marginBottom: 14,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: styledTheme.colors.warning,
+                    }}
+                  />
+                  <Text style={{ fontSize: 13, color: styledTheme.colors.textMuted }}>
+                    {dashboard.data.criticalItems} críticos (≤ 3 dias)
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: styledTheme.colors.danger,
+                    }}
+                  />
+                  <Text style={{ fontSize: 13, color: styledTheme.colors.textMuted }}>
+                    {dashboard.data.expiredItems} vencidos
+                  </Text>
+                </View>
+              </View>
+              <View style={{ gap: 20 }}>
+                <View>
+                  <Hint>Alerta de validade — próximos 7 dias</Hint>
+                  <ValidityBarChart
+                    data={dashboard.data}
+                    width={alertChartsW}
+                    height={210}
+                  />
+                </View>
+                <View>
+                  <Hint>Visão geral — itens vencidos</Hint>
+                  <ExpiredItemsBarChart
+                    count={dashboard.data.expiredItems}
+                    width={alertChartsW}
+                    height={210}
+                  />
+                </View>
+              </View>
+              <Hint style={{ marginTop: 14, marginBottom: 0 }}>
+                Gráfico de validade: faixas exclusivas (≤3, 4–5, 6–7 dias úteis), sem contar vencidos.
+              </Hint>
+            </Card>
+
+            <Card style={{ marginTop: 16 }}>
+              <SectionTitle
+                title="Resumo de estoque"
+                subtitle="Volume filtrado e linha de tendência."
               />
               <Grid>
                 <Half>
@@ -266,6 +384,20 @@ export function DashboardScreen() {
                   </Metric>
                 </Half>
               </Grid>
+              <Text
+                style={{
+                  marginTop: 10,
+                  fontSize: 14,
+                  fontWeight: '600',
+                  color:
+                    dashboard.data.stockDeltaMonth >= 0
+                      ? styledTheme.colors.success
+                      : styledTheme.colors.danger,
+                }}
+              >
+                {dashboard.data.stockDeltaMonth >= 0 ? '+' : ''}
+                {dashboard.data.stockDeltaMonth} no mês (entradas − saídas)
+              </Text>
               <View style={{ marginTop: 12 }}>
                 <StockOverviewChart data={dashboard.data} />
               </View>
@@ -273,26 +405,18 @@ export function DashboardScreen() {
 
             <Card style={{ marginTop: 16 }}>
               <SectionTitle
-                title="Alerta de validade"
-                subtitle="Distribuição por janelas de vencimento."
+                title="Movimentação — mês atual"
+                subtitle="Entradas e saídas por semana."
               />
-              <Metric style={{ marginBottom: 12 }}>
-                <MetricLabel>Itens críticos (≤ 3 dias)</MetricLabel>
-                <MetricValue>{dashboard.data.criticalItems}</MetricValue>
-              </Metric>
-              <Hint>
-                Barras mostram quantidades dentro de 3, 5 e 7 dias até o
-                vencimento.
-              </Hint>
-              <ValidityBarChart data={dashboard.data} />
+              <MovementGroupedBarChart data={dashboard.data} />
             </Card>
 
             <Card style={{ marginTop: 16 }}>
               <SectionTitle
-                title="Relatório de movimentação"
-                subtitle="Entradas e saídas por semana do mês (API /api/dashboard)."
+                title="Perdas — mês atual"
+                subtitle="Movimentações tipo PERDA por semana."
               />
-              <MovementLineChart data={dashboard.data} />
+              <PerdasWeeklyBarChart data={dashboard.data} />
             </Card>
 
             <Card style={{ marginTop: 16 }}>

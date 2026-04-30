@@ -141,8 +141,12 @@ export async function exportMovimentacaoExcelToShareSheet(
 
   let suffix = '';
   if (ctx?.idProduto != null) suffix += `_produto_${ctx.idProduto}`;
-  else if (ctx?.tipo && ctx.tipo !== 'TODOS')
-    suffix += ctx.tipo === 'ENTRADA' ? '_somente_entradas' : '_somente_saidas';
+  else if (ctx?.tipo && ctx.tipo !== 'TODOS') {
+    const t = ctx.tipo.toUpperCase();
+    if (t === 'ENTRADA') suffix += '_somente_entradas';
+    else if (t === 'SAÍDA' || t === 'SAIDA') suffix += '_somente_saidas';
+    else suffix += `_${t.toLowerCase()}`;
+  }
 
   const filename = `movimentacoes_${range.dataInicio}_${range.dataFim}${suffix}.xlsx`;
   await saveAndShareMovimentacaoExcel(buf, filename);

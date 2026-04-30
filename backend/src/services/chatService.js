@@ -117,16 +117,28 @@ export async function contarMovimentacaoMesPorProduto(tipoMov, idProduto) {
   return n;
 }
 
-/** Perdas no mês (tipo PERDA). */
-export async function contarPerdasMes() {
-  const { count, error } = await supabase
-    .from('movimentacao_estoque')
-    .select('id_movimentacao', { count: 'exact', head: true })
-    .eq('tipo_movimentacao', 'PERDA')
-    .gte('data_hora', inicioMesAtualISO());
+/**
+ * Pacotes ainda no inventário ativo (FEFO) cuja data_validade do lote já passou.
+ * Mesma base visual do dashboard — conta por produto para o texto do chat.
+ */
+export async function metricasPacotesVencidosPorProduto() {
+  const inventario = await buscarInventarioFEFO({});
+  /** @type {Map<string, number>} */
+  const porNome = new Map();
 
-  if (error) throw new Error(error.message);
-  return count ?? 0;
+  for (const item of inventario) {
+    const dias = calcularDiasRestantes(item.lote?.data_validade);
+    if (dias === null || dias >= 0) continue;
+    const nome = item.lote?.produto?.nome ?? 'Sem nome';
+    porNome.set(nome, (porNome.get(nome) ?? 0) + 1);
+  }
+
+  const total = [...porNome.values()].reduce((a, b) => a + b, 0);
+  const porProduto = [...porNome.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt'))
+    .map(([nome, quantidade]) => ({ nome, quantidade }));
+
+  return { total, porProduto };
 }
 
 /** Texto formatado — Quantidade. */
@@ -184,8 +196,24 @@ export async function textoMovimentacaoMesProduto(tipo, idProduto) {
   return `${rotulo} no mês atual para "${nome}": ${n} movimentação(ões).`;
 }
 
-/** Texto formatado — Perdas. */
+/** Texto formatado — Perdas (= pacotes com produto vencido no inventário ativo). */
 export async function textoPerdasMes() {
-  const n = await contarPerdasMes();
-  return `Houveram ${n} perdas de produtos no mês atual.`;
+  const { total, porProduto } = await metricasPacotesVencidosPorProduto();
+
+  let texto =
+    total === 0
+      ? 'No inventário ativo não há pacotes com validade vencida.'
+      : `No estoque há ${total} pacote(s) com validade vencida (lote com data de validade anterior a hoje).`;
+
+  if (total > 0) {
+    const maxLinhas = 14;
+    const amostra = porProduto.slice(0, maxLinhas);
+    const detalhe = amostra.map((x) => `• ${x.nome}: ${x.quantidade}`).join('\n');
+    const restantes = porProduto.length - maxLinhas;
+    const mais =
+      restantes > 0 ? `\n… e mais ${restantes} produto(s) com pacotes vencidos.` : '';
+    texto += `\n\nPor produto:\n${detalhe}${mais}`;
+  }
+
+  return texto;
 }

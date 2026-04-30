@@ -44,80 +44,100 @@ export const obterDadosDashboard = async (filtros) => {
 
   const normStatus = (s) => String(s ?? '').trim().toLowerCase();
 
-  // --- 1. Visão Geral (alinhada ao inventário filtrado) ---
-  const visaoGeral = {
-    totalItens: inventarioCru.length,
-    marcadosEntrega: inventarioCru.filter((p) => normStatus(p.lote?.status) === 'entrega')
-      .length,
-  };
+  const normTipoMov = (raw) =>
+    String(raw ?? '')
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
 
-  // --- 2. Alerta de Validade (por pacote no inventário filtrado) ---
-  const agrupamentoValidade = {
-    '3 dias restantes': { quantidade: 0, cor: 'hsl(0, 72%, 51%)' },
-    '5 dias restantes': { quantidade: 0, cor: 'hsl(45, 100%, 51%)' },
-    '7 dias restantes': { quantidade: 0, cor: 'hsl(220, 15%, 40%)' },
-  };
+  // --- 1. Alerta de Validade (por pacote no inventário filtrado) ---
+  // Vencidos (data < hoje) separados dos buckets 3/5/7 dias (alinha à versão web).
+  const bucketsProximos7 = { ate3: 0, ate5: 0, ate7: 0 };
+  let totalVencidos = 0;
 
   inventarioCru.forEach((item) => {
     const diasRestantes = calcularDiasRestantes(item.lote?.data_validade);
     if (diasRestantes === null) return;
     if (diasRestantes < 0) {
-      agrupamentoValidade['3 dias restantes'].quantidade += 1;
+      totalVencidos += 1;
       return;
     }
-    if (diasRestantes <= 3) {
-      agrupamentoValidade['3 dias restantes'].quantidade += 1;
-    } else if (diasRestantes <= 5) {
-      agrupamentoValidade['5 dias restantes'].quantidade += 1;
-    } else if (diasRestantes <= 7) {
-      agrupamentoValidade['7 dias restantes'].quantidade += 1;
-    }
+    if (diasRestantes <= 3) bucketsProximos7.ate3 += 1;
+    else if (diasRestantes <= 5) bucketsProximos7.ate5 += 1;
+    else if (diasRestantes <= 7) bucketsProximos7.ate7 += 1;
   });
 
-  const totalCriticos = agrupamentoValidade['3 dias restantes'].quantidade;
+  const totalCriticos = bucketsProximos7.ate3;
 
   const alertaValidade = {
     totalCriticos,
-    grupos: Object.keys(agrupamentoValidade)
-      .map((chave) => ({
-        nome: chave,
-        quantidade: agrupamentoValidade[chave].quantidade,
-        cor: agrupamentoValidade[chave].cor,
-      }))
-      .filter((grupo) => grupo.quantidade > 0),
+    totalVencidos,
+    bucketsProximos7,
+    grupos: [
+      {
+        nome: '3 dias restantes',
+        quantidade: bucketsProximos7.ate3,
+        cor: 'hsl(0, 72%, 51%)',
+      },
+      {
+        nome: '5 dias restantes',
+        quantidade: bucketsProximos7.ate5,
+        cor: 'hsl(45, 100%, 51%)',
+      },
+      {
+        nome: '7 dias restantes',
+        quantidade: bucketsProximos7.ate7,
+        cor: 'hsl(220, 15%, 40%)',
+      },
+    ].filter((grupo) => grupo.quantidade > 0),
   };
 
-  // --- 3. Movimentação Mês ---
-  // Agrupar por semanas do mês
+  // --- 2. Movimentação Mês (entradas / saídas / perdas por semana) ---
   const movimentacaoPorSemana = {};
-  
-  // Inicializando as semanas 
-  for(let i=1; i<=4; i++) {
-     movimentacaoPorSemana[`Sem ${i}`] = { entradas: 0, saidas: 0 };
+  for (let i = 1; i <= 4; i++) {
+    movimentacaoPorSemana[`Sem ${i}`] = { entradas: 0, saidas: 0, perdas: 0 };
   }
 
-  movimentacoesMes.forEach(mov => {
+  let entradasMes = 0;
+  let saidasMes = 0;
+  let perdasMesTotal = 0;
+
+  movimentacoesMes.forEach((mov) => {
     const dataMov = new Date(mov.data_hora);
     const dia = dataMov.getDate();
     let semana = Math.ceil(dia / 7);
     if (semana > 4) semana = 4;
 
     const chaveSemana = `Sem ${semana}`;
-    
-    // Suporta tanto uppercase (ENTRADA/SAÍDA) quanto lowercase
-    const tipo = (mov.tipo_movimentacao || '').toUpperCase();
+    const tipo = normTipoMov(mov.tipo_movimentacao);
+
     if (tipo === 'ENTRADA') {
       movimentacaoPorSemana[chaveSemana].entradas++;
-    } else if (tipo === 'SAÍDA' || tipo === 'SAIDA') {
+      entradasMes++;
+    } else if (tipo === 'SAIDA') {
       movimentacaoPorSemana[chaveSemana].saidas++;
+      saidasMes++;
+    } else if (tipo === 'PERDA') {
+      movimentacaoPorSemana[chaveSemana].perdas++;
+      perdasMesTotal++;
     }
   });
 
-  const movimentacaoMes = Object.keys(movimentacaoPorSemana).map(chave => ({
+  const movimentacaoMes = Object.keys(movimentacaoPorSemana).map((chave) => ({
     nome: chave,
     entradas: movimentacaoPorSemana[chave].entradas,
-    saidas: movimentacaoPorSemana[chave].saidas
+    saidas: movimentacaoPorSemana[chave].saidas,
+    perdas: movimentacaoPorSemana[chave].perdas,
   }));
+
+  // --- 3. Visão Geral (alinhada ao inventário filtrado + tendência do mês) ---
+  const visaoGeral = {
+    totalItens: inventarioCru.length,
+    marcadosEntrega: inventarioCru.filter((p) => normStatus(p.lote?.status) === 'entrega')
+      .length,
+    variacaoEstoqueMes: entradasMes - saidasMes,
+  };
 
   // --- 4. Inventário Ativo FEFO ---
   const inventarioAtivoFEFO = inventarioCru.map(item => {
@@ -158,6 +178,7 @@ export const obterDadosDashboard = async (filtros) => {
     visaoGeral,
     alertaValidade,
     movimentacaoMes,
+    perdasMesTotal,
     inventarioAtivoFEFO,
     alertasRecentes: alertasAtivos.dados || [],
     totalAlertasAtivos: alertasAtivos.total || 0,

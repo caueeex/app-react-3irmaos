@@ -445,14 +445,15 @@ export function ChatbotScreen() {
         return;
       }
       if (digit === '4') {
-        pushUser('4 — Perdas');
-        setExcelExportContext(null);
+        pushUser('4 — Perdas / vencidos');
         setLoadingInsight(true);
         try {
           const { texto } = await fetchChatPerdasMes();
+          setExcelExportContext(null);
           pushAssistant(`${texto}\n\n${buildExportFooter()}`);
           setPhase('post_reply');
         } catch {
+          setExcelExportContext(null);
           pushAssistant('Não foi possível consultar perdas.');
           setPhase('post_reply');
         } finally {
@@ -623,7 +624,7 @@ export function ChatbotScreen() {
         { key: '1', label: '1 · Quantidade' },
         { key: '2', label: '2 · Produtos em Risco' },
         { key: '3', label: '3 · Entradas e Saídas' },
-        { key: '4', label: '4 · Perdas' },
+        { key: '4', label: '4 · Perdas / vencidos' },
       ];
     }
     if (phase === 'mov_actions') {

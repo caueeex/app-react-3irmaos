@@ -50,6 +50,10 @@ function matchesFilters(item: InventoryItem, f: InventoryFilters): boolean {
   if (mTo && m > startOfDay(mTo)) return false;
   if (eFrom && e < startOfDay(eFrom)) return false;
   if (eTo && e > startOfDay(eTo)) return false;
+  if (f.categoria?.trim()) {
+    const q = f.categoria.trim().toLowerCase();
+    if (!item.productName.toLowerCase().includes(q)) return false;
+  }
   if (f.lotOrRfid) {
     const q = f.lotOrRfid.trim().toLowerCase();
     const hay = `${item.lot} ${item.rfid ?? ''}`.toLowerCase();
@@ -64,9 +68,10 @@ function buildValidityBuckets(items: InventoryItem[]) {
   let within7 = 0;
   for (const it of items) {
     const d = daysUntilExpiry(it.expiryDate);
-    if (d >= 0 && d <= 3) within3 += 1;
-    if (d >= 0 && d <= 5) within5 += 1;
-    if (d >= 0 && d <= 7) within7 += 1;
+    if (d < 0) continue;
+    if (d <= 3) within3 += 1;
+    else if (d <= 5) within5 += 1;
+    else if (d <= 7) within7 += 1;
   }
   return { within3, within5, within7 };
 }
@@ -79,6 +84,7 @@ function buildMovement(items: InventoryItem[]) {
     label,
     inflow: baseIn + idx * 4 + (idx % 2) * 6,
     outflow: baseOut + idx * 3 + ((idx + 1) % 3) * 5,
+    losses: Math.max(0, idx % 4),
   }));
 }
 
@@ -101,18 +107,24 @@ export function buildDashboardFromFilters(
   const items = seedItems.filter((i) => matchesFilters(i, filters));
   const itemsForDelivery = items.filter((i) => i.deliveryPending).length;
   const totalItems = items.reduce((s, i) => s + i.quantity, 0);
-  const criticalItems = items.filter(
-    (i) => daysUntilExpiry(i.expiryDate) <= 3,
-  ).length;
+  const criticalItems = items.filter((i) => {
+    const d = daysUntilExpiry(i.expiryDate);
+    return d >= 0 && d <= 3;
+  }).length;
+  const expiredItems = items.filter((i) => daysUntilExpiry(i.expiryDate) < 0).length;
+  const movement = buildMovement(items);
 
   return {
     items,
     itemsForDelivery,
     totalItems,
     criticalItems,
+    expiredItems,
+    stockDeltaMonth: movement.reduce((s, m) => s + m.inflow - m.outflow, 0),
+    lossesMonthTotal: movement.reduce((s, m) => s + m.losses, 0),
     stockOverview: buildOverviewSeries(items),
     validityBuckets: buildValidityBuckets(items),
-    movement: buildMovement(items),
+    movement,
   };
 }
 

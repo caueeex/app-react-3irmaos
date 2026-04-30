@@ -5,6 +5,7 @@ export type ApiMovimentacaoSemana = {
   nome: string;
   entradas: number;
   saidas: number;
+  perdas?: number;
 };
 
 export type ApiItemInventario = {
@@ -19,10 +20,23 @@ export type ApiItemInventario = {
   highlight: boolean;
 };
 
+export type ApiBucketsProximos7 = { ate3: number; ate5: number; ate7: number };
+
 export type ApiDashboardData = {
-  visaoGeral: { totalItens: number; marcadosEntrega: number };
-  alertaValidade: { totalCriticos: number; grupos: ApiGrupoValidade[] };
+  visaoGeral: {
+    totalItens: number;
+    marcadosEntrega: number;
+    variacaoEstoqueMes?: number;
+  };
+  alertaValidade: {
+    totalCriticos: number;
+    totalVencidos?: number;
+    bucketsProximos7?: ApiBucketsProximos7;
+    grupos: ApiGrupoValidade[];
+  };
   movimentacaoMes: ApiMovimentacaoSemana[];
+  /** Total de movimentações tipo PERDA no mês corrente. */
+  perdasMesTotal?: number;
   inventarioAtivoFEFO: ApiItemInventario[];
   alertasRecentes: unknown[];
   totalAlertasAtivos: number;

@@ -127,6 +127,15 @@ function mapInventarioRow(row: ApiDashboardData['inventarioAtivoFEFO'][number], 
 export function mapDashboardApiToPayload(data: ApiDashboardData): DashboardPayload {
   const { visaoGeral, alertaValidade, movimentacaoMes, inventarioAtivoFEFO } = data;
   const grupos = alertaValidade.grupos ?? [];
+  const b7 = alertaValidade.bucketsProximos7;
+
+  const validityBuckets = b7
+    ? { within3: b7.ate3, within5: b7.ate5, within7: b7.ate7 }
+    : {
+        within3: grupoQuantidade(grupos, '3 dias'),
+        within5: grupoQuantidade(grupos, '5 dias'),
+        within7: grupoQuantidade(grupos, '7 dias'),
+      };
 
   const movement =
     movimentacaoMes.length > 0
@@ -134,24 +143,29 @@ export function mapDashboardApiToPayload(data: ApiDashboardData): DashboardPaylo
           label: m.nome,
           inflow: m.entradas,
           outflow: m.saidas,
+          losses: m.perdas ?? 0,
         }))
       : ['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4'].map((label) => ({
           label,
           inflow: 0,
           outflow: 0,
+          losses: 0,
         }));
+
+  const lossesMonthTotal =
+    data.perdasMesTotal ??
+    movement.reduce((acc, w) => acc + w.losses, 0);
 
   return {
     items: inventarioAtivoFEFO.map(mapInventarioRow),
     itemsForDelivery: visaoGeral.marcadosEntrega ?? 0,
     totalItems: visaoGeral.totalItens ?? 0,
-    criticalItems: grupoQuantidade(grupos, '3 dias'),
+    criticalItems: alertaValidade.totalCriticos ?? grupoQuantidade(grupos, '3 dias'),
+    expiredItems: alertaValidade.totalVencidos ?? 0,
+    stockDeltaMonth: visaoGeral.variacaoEstoqueMes ?? 0,
+    lossesMonthTotal,
     stockOverview: buildStockOverview(visaoGeral.totalItens ?? 0),
-    validityBuckets: {
-      within3: grupoQuantidade(grupos, '3 dias'),
-      within5: grupoQuantidade(grupos, '5 dias'),
-      within7: grupoQuantidade(grupos, '7 dias'),
-    },
+    validityBuckets,
     movement,
   };
 }
@@ -162,6 +176,8 @@ function buildDashboardQueryParams(filters: InventoryFilters): Record<string, st
   if (filters.manufactureTo) p.dataFabricacaoFim = filters.manufactureTo;
   if (filters.expiryFrom) p.dataValidadeInicio = filters.expiryFrom;
   if (filters.expiryTo) p.dataValidadeFim = filters.expiryTo;
+  const cat = filters.categoria?.trim();
+  if (cat) p.categoria = cat;
   const lr = filters.lotOrRfid?.trim();
   if (lr) {
     p.lote = lr;
