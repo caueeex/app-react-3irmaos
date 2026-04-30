@@ -1,12 +1,23 @@
 import supabase from '../config/supabase.js';
 
+function timeoutPromise(ms, message) {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(message)), ms);
+  });
+}
+
 // ── Funções existentes ────────────────────────────────────────────
 export const buscarUsuarioPorEmail = async (email) => {
-  const { data, error } = await supabase
+  const query = supabase
     .from('usuario')
     .select(`*, perfil ( nome, descricao )`)
     .eq('email', email)
     .single();
+
+  const { data, error } = await Promise.race([
+    query,
+    timeoutPromise(8000, 'Timeout ao buscar usuário no banco.'),
+  ]);
 
   if (error && error.code !== 'PGRST116') {
     throw new Error(`Erro no banco ao buscar usuário: ${error.message}`);

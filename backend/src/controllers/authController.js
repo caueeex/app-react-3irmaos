@@ -13,8 +13,11 @@ export const login = async (req, res) => {
     return res.status(200).json(dadosLogin);
 
   } catch (error) {
-    // Se o Service lançou um erro
-    return res.status(401).json({ erro: error.message });
+    const message = error instanceof Error ? error.message : 'Falha ao realizar login.';
+    const isInfraIssue =
+      message.includes('Timeout ao buscar usuário no banco') ||
+      message.includes('Erro no banco ao buscar usuário');
+    return res.status(isInfraIssue ? 503 : 401).json({ erro: message });
   }
 };
 
