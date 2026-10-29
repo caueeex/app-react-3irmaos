@@ -18,13 +18,11 @@ import { useAuth } from '../context/AuthContext';
 import {
   fetchPerfisPublic,
   formatLoginOrConnectionError,
-  getApiBaseURL,
-  getApiTunnelNeedsEnvHint,
   registerRequest,
   type ApiPerfil,
 } from '../services/api';
 
-/** Se definido (ex.: 2 = Operador), o cadastro não exibe o campo Perfil — o backend ainda recebe `id_perfil`. */
+/** Se definido (ex.: 2 = Operador), o cadastro não exibe o campo Perfil. */
 function parseRegisterPerfilIdFromEnv(): number | null {
   const raw = process.env.EXPO_PUBLIC_REGISTER_PERFIL_ID?.trim();
   if (!raw) return null;
@@ -67,12 +65,6 @@ const Card = styled.View`
   elevation: 8;
 `;
 
-const Hint = styled.Text`
-  color: ${({ theme }) => theme.colors.textMuted};
-  font-size: 12px;
-  text-align: center;
-`;
-
 const LinkButton = styled(Pressable)`
   padding-vertical: ${({ theme }) => theme.spacing(2)}px;
   align-self: center;
@@ -108,14 +100,12 @@ export function LoginScreen() {
         if (cancelled) return;
         setPerfis(list);
         if (list.length > 0) {
-          setPerfilLabel(`${list[0].nome} (#${list[0].id_perfil})`);
+          setPerfilLabel(list[0].nome);
         } else {
           setPerfilLabel('');
           Alert.alert(
-            'Nenhum perfil disponível',
-            'A tabela «perfil» no Supabase está vazia ou o banco não liberou a leitura (RLS).\n\n' +
-              '1) No Supabase, SQL Editor: insira perfis (ex.: Administrador e Operador).\n' +
-              '2) Se usar RLS em «perfil», crie política de SELECT para a chave do backend ou use a service role no servidor.',
+            'Cadastro indisponível',
+            'Não há perfis disponíveis no momento. Fale com o administrador do sistema.',
           );
         }
       } catch (err: unknown) {
@@ -131,18 +121,12 @@ export function LoginScreen() {
     };
   }, [mode, escolhePerfilNaTela]);
 
-  const perfilOptions = useMemo(
-    () => perfis.map((p) => `${p.nome} (#${p.id_perfil})`),
-    [perfis],
-  );
+  const perfilOptions = useMemo(() => perfis.map((p) => p.nome), [perfis]);
 
   const idPerfilSelecionado = useMemo(() => {
-    // Rótulo no formato "Nome (#123)" — o ID fica entre parênteses, não no fim da string.
-    const m = perfilLabel.match(/\(#(\d+)\)/);
-    if (!m) return undefined;
-    const id = parseInt(m[1], 10);
-    return Number.isFinite(id) ? id : undefined;
-  }, [perfilLabel]);
+    const found = perfis.find((p) => p.nome === perfilLabel);
+    return found?.id_perfil;
+  }, [perfilLabel, perfis]);
 
   const idPerfilParaCadastro = registerPerfilIdFixo ?? idPerfilSelecionado;
 
@@ -180,9 +164,9 @@ export function LoginScreen() {
         'Atenção',
         escolhePerfilNaTela
           ? perfis.length === 0
-            ? 'Não há perfil disponível (GET /api/perfil). Cadastre linhas na tabela «perfil» no Supabase ou verifique RLS.'
+            ? 'Não há perfil disponível. Fale com o administrador do sistema.'
             : 'Selecione um perfil.'
-          : 'Defina EXPO_PUBLIC_REGISTER_PERFIL_ID com um id válido existente na tabela «perfil» (ex.: 2).',
+          : 'Cadastro temporariamente indisponível. Fale com o administrador do sistema.',
       );
       return;
     }
@@ -234,7 +218,7 @@ export function LoginScreen() {
         >
           <FadeInView>
             <Brand>3IRMÃOS</Brand>
-            <Sub>Gestão de estoque — mesma API do painel ValiBread.</Sub>
+            <Sub>Gestão de estoque e validade.</Sub>
             <Card>
               {mode === 'register' ? (
                 <AppTextInput
@@ -298,16 +282,6 @@ export function LoginScreen() {
                   {mode === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tenho conta — entrar'}
                 </LinkLabel>
               </LinkButton>
-              <Hint>
-                API: {getApiBaseURL()}
-                {getApiTunnelNeedsEnvHint() ? '\nTunnel: use EXPO_PUBLIC_API_URL=http://IP_DO_PC:3000' : ''}
-                {'\n'}
-                {mode === 'login'
-                  ? 'POST /api/auth/login'
-                  : escolhePerfilNaTela
-                    ? 'GET /api/perfil · POST /api/auth/cadastro'
-                    : `POST /api/auth/cadastro (id_perfil=${registerPerfilIdFixo})`}
-              </Hint>
             </Card>
           </FadeInView>
         </ScrollView>

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -32,8 +32,20 @@ import { CHAT_FAB_SCROLL_PADDING, ChatFab } from '../components/ChatFab';
 import { ValidityBadge } from '../components/ValidityBadge';
 import { useDashboardFilters } from '../context/InventoryFiltersContext';
 import { useDashboard } from '../hooks/useDashboard';
+import { fetchChatProdutos } from '../services/api';
+import {
+  REPORT_PERIODS,
+  REPORT_TYPES,
+  buildReportData,
+  exportReportCsv,
+  formatPreviewAlert,
+  type ReportPeriod,
+  type ReportType,
+} from '../services/reportExport';
 import { formatDisplayDate } from '../utils/date';
 import { daysUntilExpiry } from '../utils/validity';
+
+const PRODUTO_FILTRO_TODOS = 'Todos';
 
 const Page = styled.View`
   flex: 1;
@@ -134,14 +146,14 @@ const LoadingBox = styled.View`
   align-items: center;
 `;
 
-const REPORT_TYPES = [
-  'Movimentação',
-  'Validade',
-  'Inventário crítico',
-  'Entregas pendentes',
-];
+const PageMeta = styled.Text`
+  color: ${({ theme }) => theme.colors.textMuted};
+  font-size: 12px;
+  text-align: center;
+  margin-top: ${({ theme }) => theme.spacing(3)}px;
+`;
 
-const PERIODS = ['Últimos 7 dias', 'Últimos 30 dias', 'Trimestre atual'];
+const INVENTORY_PAGE_SIZE = 8;
 
 /** Largura dos gráficos de barras (scroll + card); evita hook só para dimensão. */
 function alertPanelChartWidth(): number {
@@ -158,20 +170,86 @@ export function DashboardScreen() {
 
   const [reportTypeOpen, setReportTypeOpen] = useState(false);
   const [periodOpen, setPeriodOpen] = useState(false);
+  const [produtoFiltroOpen, setProdutoFiltroOpen] = useState(false);
+  const [produtosNomes, setProdutosNomes] = useState<string[]>([]);
 
-  const [reportType, setReportType] = useState(REPORT_TYPES[0]);
-  const [period, setPeriod] = useState(PERIODS[0]);
+  const [reportType, setReportType] = useState<ReportType>(REPORT_TYPES[0]);
+  const [period, setPeriod] = useState<ReportPeriod>(REPORT_PERIODS[1]);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [inventoryPage, setInventoryPage] = useState(0);
 
-  const previewText = useMemo(() => {
-    const lines = [
-      `Tipo: ${reportType}`,
-      `Período: ${period}`,
-      `Itens considerados: ${dashboard.data?.items.length ?? 0}`,
-      `Total (unidades): ${dashboard.data?.totalItems ?? 0}`,
-    ];
-    return lines.join('\n');
-  }, [dashboard.data, period, reportType]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { produtos } = await fetchChatProdutos();
+        if (!cancelled) {
+          setProdutosNomes(produtos.map((p) => p.nome));
+        }
+      } catch {
+        if (!cancelled) setProdutosNomes([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const produtoFiltroOptions = useMemo(
+    () => [PRODUTO_FILTRO_TODOS, ...produtosNomes],
+    [produtosNomes],
+  );
+
+  const inventoryItems = dashboard.data?.items ?? [];
+  const inventoryTotalPages = Math.max(
+    1,
+    Math.ceil(inventoryItems.length / INVENTORY_PAGE_SIZE),
+  );
+
+  useEffect(() => {
+    setInventoryPage(0);
+  }, [applied, inventoryItems.length]);
+
+  useEffect(() => {
+    if (inventoryPage > inventoryTotalPages - 1) {
+      setInventoryPage(Math.max(0, inventoryTotalPages - 1));
+    }
+  }, [inventoryPage, inventoryTotalPages]);
+
+  const inventoryPageItems = useMemo(() => {
+    const start = inventoryPage * INVENTORY_PAGE_SIZE;
+    return inventoryItems.slice(start, start + INVENTORY_PAGE_SIZE);
+  }, [inventoryItems, inventoryPage]);
+
+  const onPreviewReport = useCallback(async () => {
+    setReportBusy(true);
+    try {
+      const { preview } = await buildReportData(reportType, period);
+      Alert.alert('Pré-visualização', formatPreviewAlert(preview));
+    } catch (e) {
+      Alert.alert(
+        'Pré-visualização',
+        e instanceof Error ? e.message : 'Não foi possível montar o resumo.',
+      );
+    } finally {
+      setReportBusy(false);
+    }
+  }, [period, reportType]);
+
+  const onExportExcel = useCallback(async () => {
+    setReportBusy(true);
+    try {
+      await exportReportCsv(reportType, period);
+    } catch (e) {
+      Alert.alert(
+        'Exportar planilha',
+        e instanceof Error ? e.message : 'Não foi possível gerar a planilha.',
+      );
+    } finally {
+      setReportBusy(false);
+    }
+  }, [period, reportType]);
 
   return (
     <Page>
@@ -259,11 +337,24 @@ export function DashboardScreen() {
                 </Half>
               </Grid>
               <View style={{ height: 12 }} />
-              <AppTextInput
-                label="Categoria (produto)"
-                placeholder="Nome parcial do produto"
-                value={draft.categoria ?? ''}
-                onChangeText={(txt) => setDraftField('categoria', txt)}
+              <SelectField
+                label="Produto"
+                value={draft.categoria?.trim() || PRODUTO_FILTRO_TODOS}
+                options={produtoFiltroOptions}
+                onChange={(v) =>
+                  setDraftField(
+                    'categoria',
+                    v === PRODUTO_FILTRO_TODOS ? undefined : v,
+                  )
+                }
+                open={produtoFiltroOpen}
+                onOpenChange={(open) => {
+                  setProdutoFiltroOpen(open);
+                  if (open) {
+                    setReportTypeOpen(false);
+                    setPeriodOpen(false);
+                  }
+                }}
               />
               <View style={{ height: 12 }} />
               <AppTextInput
@@ -422,9 +513,13 @@ export function DashboardScreen() {
             <Card style={{ marginTop: 16 }}>
               <SectionTitle
                 title="Inventário ativo"
-                subtitle="Lista dinâmica conforme filtros aplicados."
+                subtitle={
+                  inventoryItems.length === 0
+                    ? 'Lista dinâmica conforme filtros aplicados.'
+                    : `${inventoryItems.length} item(ns) · ${INVENTORY_PAGE_SIZE} por página`
+                }
               />
-              {dashboard.data.items.length === 0 ? (
+              {inventoryItems.length === 0 ? (
                 <EmptyState
                   title="Nenhum item encontrado"
                   description="Ajuste os filtros ou limpe os campos para ampliar o resultado."
@@ -439,7 +534,7 @@ export function DashboardScreen() {
                     <Th>Val.</Th>
                     <Th>Status</Th>
                   </TableHeader>
-                  {dashboard.data.items.map((it) => {
+                  {inventoryPageItems.map((it) => {
                     const dLeft = daysUntilExpiry(it.expiryDate);
                     return (
                       <Tr key={it.id}>
@@ -459,6 +554,35 @@ export function DashboardScreen() {
                       </Tr>
                     );
                   })}
+                  <PageMeta>
+                    Página {inventoryPage + 1} de {inventoryTotalPages}
+                  </PageMeta>
+                  {inventoryTotalPages > 1 ? (
+                    <Row>
+                      <View style={{ flex: 1 }}>
+                        <Button
+                          title="Anterior"
+                          variant="secondary"
+                          onPress={() =>
+                            setInventoryPage((p) => Math.max(0, p - 1))
+                          }
+                          disabled={inventoryPage === 0}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Button
+                          title="Próxima"
+                          variant="secondary"
+                          onPress={() =>
+                            setInventoryPage((p) =>
+                              Math.min(inventoryTotalPages - 1, p + 1),
+                            )
+                          }
+                          disabled={inventoryPage >= inventoryTotalPages - 1}
+                        />
+                      </View>
+                    </Row>
+                  ) : null}
                 </>
               )}
             </Card>
@@ -466,13 +590,13 @@ export function DashboardScreen() {
             <Card style={{ marginTop: 16 }}>
               <SectionTitle
                 title="Painel de relatórios"
-                subtitle="Fluxo preparado para exportação futura."
+                subtitle="Escolha o tipo e o período para visualizar ou exportar."
               />
               <SelectField
                 label="Tipo de relatório"
                 value={reportType}
-                options={REPORT_TYPES}
-                onChange={setReportType}
+                options={[...REPORT_TYPES]}
+                onChange={(v) => setReportType(v as ReportType)}
                 open={reportTypeOpen}
                 onOpenChange={setReportTypeOpen}
               />
@@ -480,48 +604,39 @@ export function DashboardScreen() {
               <SelectField
                 label="Período"
                 value={period}
-                options={PERIODS}
-                onChange={setPeriod}
+                options={[...REPORT_PERIODS]}
+                onChange={(v) => setPeriod(v as ReportPeriod)}
                 open={periodOpen}
                 onOpenChange={setPeriodOpen}
               />
-              <Row>
-                <View style={{ flex: 1 }}>
-                  <Button
-                    title="Pré-visualizar"
-                    variant="secondary"
-                    onPress={() =>
-                      Alert.alert('Pré-visualização', previewText)
-                    }
-                  />
-                </View>
-              </Row>
-              <Row>
-                <View style={{ flex: 1 }}>
-                  <Button
-                    title="Exportar PDF"
-                    variant="ghost"
-                    onPress={() =>
-                      Alert.alert(
-                        'Exportação',
-                        'Integração com endpoint de PDF pendente. Estrutura pronta no service.',
-                      )
-                    }
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Button
-                    title="Exportar Excel"
-                    variant="ghost"
-                    onPress={() =>
-                      Alert.alert(
-                        'Exportação',
-                        'Integração com endpoint de Excel pendente. Estrutura pronta no service.',
-                      )
-                    }
-                  />
-                </View>
-              </Row>
+              {reportBusy ? (
+                <Row>
+                  <View style={{ flex: 1, alignItems: 'center', paddingVertical: 12 }}>
+                    <ActivityIndicator color={styledTheme.colors.primary} />
+                  </View>
+                </Row>
+              ) : (
+                <>
+                  <Row>
+                    <View style={{ flex: 1 }}>
+                      <Button
+                        title="Pré-visualizar"
+                        variant="secondary"
+                        onPress={onPreviewReport}
+                      />
+                    </View>
+                  </Row>
+                  <Row>
+                    <View style={{ flex: 1 }}>
+                      <Button
+                        title="Exportar Excel"
+                        variant="ghost"
+                        onPress={onExportExcel}
+                      />
+                    </View>
+                  </Row>
+                </>
+              )}
             </Card>
           </>
         ) : (

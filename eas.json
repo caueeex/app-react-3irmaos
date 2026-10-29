@@ -13,7 +13,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://52.90.18.83:3000"
+        "EXPO_PUBLIC_SUPABASE_URL": "https://urdikcvrgpmvpgrukjsi.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": ""
       }
     },
     "production": {

@@ -1,4 +1,3 @@
-import axios from 'axios';
 import * as Sharing from 'expo-sharing';
 import {
   cacheDirectory,
@@ -6,17 +5,9 @@ import {
   writeAsStringAsync,
 } from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
-import { api } from './api';
+import { supabase } from './supabase';
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i]);
-  return globalThis.btoa(binary);
-}
-
-/** Período padrão: primeiro dia do mês até hoje (alinhado ao uso típico do painel). */
+/** Período padrão: primeiro dia do mês até hoje. */
 export function defaultExportMonthRange(): { dataInicio: string; dataFim: string } {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -25,80 +16,225 @@ export function defaultExportMonthRange(): { dataInicio: string; dataFim: string
   return { dataInicio, dataFim };
 }
 
-function parseErrorFromBuffer(data: ArrayBuffer): string | null {
-  try {
-    const text = new TextDecoder().decode(data);
-    const j = JSON.parse(text) as { erro?: unknown };
-    return typeof j.erro === 'string' ? j.erro : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Alinha com o fluxo do chat (quantidade/mov. por produto). */
+/**
+ * escopo `estoque` — planilha do inventário (fluxo Quantidade).
+ * escopo `movimentacao` (padrão) — entradas/saídas do período.
+ */
 export type ExcelExportChatContext = {
-  /** Filtra linhas do relatório a este produto (movimentações daquele lote). */
   idProduto?: number;
-  /** ENTRADA | SAÍDA — quando só quer um tipo (ex.: submenu movimentação). */
   tipo?: string;
+  escopo?: 'estoque' | 'movimentacao';
 };
 
-export async function fetchMovimentacaoExcelBuffer(params?: {
+function escapeCsv(value: string): string {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+function toCsv(rows: string[][]): string {
+  return rows.map((r) => r.map((c) => escapeCsv(c)).join(',')).join('\n');
+}
+
+type MovRow = {
+  id_movimentacao: number;
+  tipo_movimentacao: string;
+  data_hora: string;
+  pacote:
+    | {
+        lote:
+          | {
+              codigo_lote?: string;
+              id_produto?: number;
+              produto?: { nome?: string } | { nome?: string }[];
+            }
+          | {
+              codigo_lote?: string;
+              id_produto?: number;
+              produto?: { nome?: string } | { nome?: string }[];
+            }[];
+      }
+    | {
+        lote:
+          | {
+              codigo_lote?: string;
+              id_produto?: number;
+              produto?: { nome?: string } | { nome?: string }[];
+            }
+          | {
+              codigo_lote?: string;
+              id_produto?: number;
+              produto?: { nome?: string } | { nome?: string }[];
+            }[];
+      }[]
+    | null;
+};
+
+type EstoqueRow = {
+  id_pacote: number;
+  status: string;
+  lote:
+    | {
+        codigo_lote?: string;
+        data_fabricacao?: string | null;
+        data_validade?: string | null;
+        status?: string | null;
+        id_produto?: number;
+        produto?: { nome?: string } | { nome?: string }[];
+      }
+    | {
+        codigo_lote?: string;
+        data_fabricacao?: string | null;
+        data_validade?: string | null;
+        status?: string | null;
+        id_produto?: number;
+        produto?: { nome?: string } | { nome?: string }[];
+      }[]
+    | null;
+  rfid_etiqueta: { epc?: string } | { epc?: string }[] | null;
+};
+
+function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
+  if (value == null) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+/** Inventário atual (pacotes) — usado no fluxo Quantidade do chatbot. */
+export async function fetchEstoqueCsv(params?: { idProduto?: number }): Promise<string> {
+  let query = supabase
+    .from('pacote')
+    .select(
+      `
+      id_pacote,
+      status,
+      lote!inner (
+        codigo_lote,
+        data_fabricacao,
+        data_validade,
+        status,
+        id_produto,
+        produto!inner ( nome )
+      ),
+      rfid_etiqueta ( epc )
+    `,
+    )
+    .order('data_validade', { referencedTable: 'lote', ascending: true });
+
+  if (params?.idProduto != null) {
+    query = query.eq('lote.id_produto', params.idProduto);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as EstoqueRow[];
+  const header = [
+    'id_pacote',
+    'produto',
+    'lote',
+    'status_pacote',
+    'data_fabricacao',
+    'data_validade',
+    'dias_restantes',
+    'epc',
+  ];
+
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const body = rows.map((row) => {
+    const lote = unwrapOne(row.lote);
+    const produto = unwrapOne(lote?.produto);
+    const rfid = unwrapOne(row.rfid_etiqueta);
+    let dias = '';
+    if (lote?.data_validade) {
+      const venc = new Date(lote.data_validade);
+      venc.setHours(0, 0, 0, 0);
+      dias = String(Math.ceil((venc.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)));
+    }
+    return [
+      String(row.id_pacote),
+      String(produto?.nome ?? ''),
+      String(lote?.codigo_lote ?? ''),
+      String(row.status ?? ''),
+      String(lote?.data_fabricacao ?? ''),
+      String(lote?.data_validade ?? ''),
+      dias,
+      String(rfid?.epc ?? ''),
+    ];
+  });
+
+  return `\uFEFF${toCsv([header, ...body])}`;
+}
+
+export async function fetchMovimentacaoCsv(params?: {
   dataInicio?: string;
   dataFim?: string;
   tipo?: string;
   idProduto?: number;
-}): Promise<ArrayBuffer> {
+}): Promise<string> {
   const range =
     params?.dataInicio && params?.dataFim
       ? { dataInicio: params.dataInicio, dataFim: params.dataFim }
       : defaultExportMonthRange();
 
-  try {
-    const response = await api.get<ArrayBuffer>('/api/export/inventario', {
-      params: {
-        formato: 'EXCEL',
-        tipo: params?.tipo ?? 'TODOS',
-        dataInicio: range.dataInicio,
-        dataFim: range.dataFim,
-        ...(params?.idProduto != null ? { id_produto: params.idProduto } : {}),
-      },
-      responseType: 'arraybuffer',
-      timeout: 120000,
-    });
+  let query = supabase
+    .from('movimentacao_estoque')
+    .select(
+      `
+      id_movimentacao,
+      tipo_movimentacao,
+      data_hora,
+      pacote (
+        lote (
+          codigo_lote,
+          id_produto,
+          produto ( nome )
+        )
+      )
+    `,
+    )
+    .gte('data_hora', `${range.dataInicio}T00:00:00`)
+    .lte('data_hora', `${range.dataFim}T23:59:59`)
+    .order('data_hora', { ascending: false });
 
-    const buf = response.data as ArrayBuffer;
-    if (buf.byteLength < 4096) {
-      const text = new TextDecoder().decode(buf);
-      if (text.trimStart().startsWith('{')) {
-        const msg = parseErrorFromBuffer(buf);
-        throw new Error(msg ?? 'Erro ao gerar Excel.');
-      }
-    }
-
-    return buf;
-  } catch (e) {
-    if (axios.isAxiosError(e) && e.response?.data !== undefined && e.response.status >= 400) {
-      const raw = e.response.data as ArrayBuffer | { erro?: string };
-      if (raw instanceof ArrayBuffer) {
-        const msg = parseErrorFromBuffer(raw);
-        if (msg) throw new Error(msg);
-      } else if (raw && typeof raw === 'object' && typeof raw.erro === 'string') {
-        throw new Error(raw.erro);
-      }
-    }
-    throw e;
+  const tipo = params?.tipo?.trim();
+  if (tipo && tipo.toUpperCase() !== 'TODOS') {
+    query = query.eq('tipo_movimentacao', tipo.toUpperCase() === 'SAIDA' ? 'SAÍDA' : tipo);
   }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as MovRow[];
+  const filtered =
+    params?.idProduto != null
+      ? rows.filter((row) => {
+          const pacote = unwrapOne(row.pacote);
+          const lote = unwrapOne(pacote?.lote);
+          return lote?.id_produto === params.idProduto;
+        })
+      : rows;
+
+  const header = ['id_movimentacao', 'tipo', 'data_hora', 'produto', 'lote'];
+  const body = filtered.map((row) => {
+    const pacote = unwrapOne(row.pacote);
+    const lote = unwrapOne(pacote?.lote);
+    const produto = unwrapOne(lote?.produto);
+    return [
+      String(row.id_movimentacao),
+      String(row.tipo_movimentacao ?? ''),
+      String(row.data_hora ?? ''),
+      String(produto?.nome ?? ''),
+      String(lote?.codigo_lote ?? ''),
+    ];
+  });
+
+  return `\uFEFF${toCsv([header, ...body])}`;
 }
 
-export async function saveAndShareMovimentacaoExcel(
-  buffer: ArrayBuffer,
-  filename: string,
-): Promise<void> {
+export async function saveAndShareCsv(csv: string, filename: string): Promise<void> {
   if (Platform.OS === 'web') {
-    const blob = new Blob([buffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -112,9 +248,8 @@ export async function saveAndShareMovimentacaoExcel(
   if (!dir) throw new Error('Armazenamento temporário indisponível.');
 
   const uri = `${dir}${filename}`;
-  await writeAsStringAsync(uri, arrayBufferToBase64(buffer), {
-    encoding: EncodingType.Base64,
-  });
+  const base64 = globalThis.btoa(unescape(encodeURIComponent(csv)));
+  await writeAsStringAsync(uri, base64, { encoding: EncodingType.Base64 });
 
   const available = await Sharing.isAvailableAsync();
   if (!available) {
@@ -122,18 +257,28 @@ export async function saveAndShareMovimentacaoExcel(
   }
 
   await Sharing.shareAsync(uri, {
-    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    dialogTitle: 'Salvar ou enviar Excel',
-    UTI: 'org.openxmlformats.spreadsheetml.sheet',
+    mimeType: 'text/csv',
+    dialogTitle: 'Salvar ou enviar CSV',
+    UTI: 'public.comma-separated-values-text',
   });
 }
 
-/** Baixa movimentações do backend e abre a folha de compartilhamento (ou download na web). */
+/** Exporta planilha conforme o contexto do chatbot (estoque ou movimentações). */
 export async function exportMovimentacaoExcelToShareSheet(
   ctx?: ExcelExportChatContext | null,
 ): Promise<void> {
+  const escopo = ctx?.escopo ?? 'movimentacao';
+
+  if (escopo === 'estoque') {
+    const csv = await fetchEstoqueCsv({ idProduto: ctx?.idProduto });
+    const hoje = new Date().toISOString().slice(0, 10);
+    const suffix = ctx?.idProduto != null ? `_produto_${ctx.idProduto}` : '_geral';
+    await saveAndShareCsv(csv, `estoque_${hoje}${suffix}.csv`);
+    return;
+  }
+
   const range = defaultExportMonthRange();
-  const buf = await fetchMovimentacaoExcelBuffer({
+  const csv = await fetchMovimentacaoCsv({
     ...range,
     tipo: ctx?.tipo ?? 'TODOS',
     idProduto: ctx?.idProduto,
@@ -148,6 +293,6 @@ export async function exportMovimentacaoExcelToShareSheet(
     else suffix += `_${t.toLowerCase()}`;
   }
 
-  const filename = `movimentacoes_${range.dataInicio}_${range.dataFim}${suffix}.xlsx`;
-  await saveAndShareMovimentacaoExcel(buf, filename);
+  const filename = `movimentacoes_${range.dataInicio}_${range.dataFim}${suffix}.csv`;
+  await saveAndShareCsv(csv, filename);
 }

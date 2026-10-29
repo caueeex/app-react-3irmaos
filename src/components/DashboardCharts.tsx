@@ -1,8 +1,12 @@
-import { Dimensions, Text, View } from 'react-native';
+import { Alert, Dimensions, Pressable, Text, View } from 'react-native';
 import { BarChart, LineChart } from 'react-native-chart-kit';
 import { useMemo } from 'react';
 import { useTheme } from 'styled-components/native';
 import type { DashboardPayload } from '../types/inventory';
+
+function showChartValue(title: string, label: string, value: number, unit = 'registro(s)') {
+  Alert.alert(title, `${label}: ${value} ${unit}`);
+}
 
 function chartWidth() {
   return Math.max(280, Dimensions.get('window').width - 40);
@@ -44,14 +48,16 @@ export function StockOverviewChart({ data }: Props) {
   const w = chartWidth();
   const chartBase = useChartBase();
   const t = useTheme();
+  const labels = data.stockOverview.map((p) => p.label);
+  const values = data.stockOverview.map((p) => p.total);
 
   return (
     <LineChart
       data={{
-        labels: data.stockOverview.map((p) => p.label),
+        labels,
         datasets: [
           {
-            data: data.stockOverview.map((p) => p.total),
+            data: values.length ? values : [0],
             color: (opacity = 1) =>
               t.mode === 'dark'
                 ? `rgba(96, 165, 250, ${opacity})`
@@ -74,6 +80,10 @@ export function StockOverviewChart({ data }: Props) {
       withInnerLines
       withVerticalLines={false}
       fromZero
+      onDataPointClick={({ index, value }) => {
+        const label = labels[index] ?? `Ponto ${index + 1}`;
+        showChartValue('Estoque', label, value, 'item(ns)');
+      }}
     />
   );
 }
@@ -89,14 +99,16 @@ export function ValidityBarChart({ data, width: widthOverride, height: heightOve
   const t = useTheme();
   const chartBase = useChartBase();
   const points = data.validityBuckets;
+  const labels = ['≤ 3 dias', '≤ 5 dias', '≤ 7 dias'];
+  const values = [points.within3, points.within5, points.within7];
 
   return (
     <BarChart
       data={{
-        labels: ['≤ 3 dias', '≤ 5 dias', '≤ 7 dias'],
+        labels,
         datasets: [
           {
-            data: [points.within3, points.within5, points.within7],
+            data: values,
             colors: [
               (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
               (opacity = 1) => `rgba(234, 179, 8, ${opacity})`,
@@ -122,6 +134,9 @@ export function ValidityBarChart({ data, width: widthOverride, height: heightOve
       showValuesOnTopOfBars
       withCustomBarColorFromData
       flatColor
+      onDataPointClick={({ index, value }) => {
+        showChartValue('Validade', labels[index] ?? 'Faixa', value, 'item(ns)');
+      }}
     />
   );
 }
@@ -167,6 +182,9 @@ export function ExpiredItemsBarChart({
       showValuesOnTopOfBars
       withCustomBarColorFromData
       flatColor
+      onDataPointClick={({ value }) => {
+        showChartValue('Vencidos', 'Itens vencidos', value, 'item(ns)');
+      }}
     />
   );
 }
@@ -185,7 +203,7 @@ export function MovementGroupedBarChart({ data }: Props) {
           flexDirection: 'row',
           justifyContent: 'space-between',
           alignItems: 'flex-end',
-          height: GROUP_BAR_H + 22,
+          height: GROUP_BAR_H + 36,
           paddingHorizontal: 2,
         }}
       >
@@ -202,7 +220,15 @@ export function MovementGroupedBarChart({ data }: Props) {
                   height: GROUP_BAR_H,
                 }}
               >
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${w.label} entradas ${w.inflow}`}
+                  onPress={() => showChartValue('Entradas', w.label, w.inflow)}
+                  style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}
+                >
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: t.colors.text, marginBottom: 4 }}>
+                    {w.inflow}
+                  </Text>
                   <View
                     style={{
                       width: '100%',
@@ -211,8 +237,16 @@ export function MovementGroupedBarChart({ data }: Props) {
                       borderRadius: 5,
                     }}
                   />
-                </View>
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${w.label} saídas ${w.outflow}`}
+                  onPress={() => showChartValue('Saídas', w.label, w.outflow)}
+                  style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}
+                >
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: t.colors.text, marginBottom: 4 }}>
+                    {w.outflow}
+                  </Text>
                   <View
                     style={{
                       width: '100%',
@@ -221,7 +255,7 @@ export function MovementGroupedBarChart({ data }: Props) {
                       borderRadius: 5,
                     }}
                   />
-                </View>
+                </Pressable>
               </View>
               <Text style={{ marginTop: 8, fontSize: 11, color: t.colors.textMuted }}>{w.label}</Text>
             </View>
@@ -261,17 +295,27 @@ export function PerdasWeeklyBarChart({ data }: Props) {
           flexDirection: 'row',
           justifyContent: 'space-between',
           alignItems: 'flex-end',
-          height: GROUP_BAR_H + 22,
+          height: GROUP_BAR_H + 36,
           paddingHorizontal: 2,
         }}
       >
         {weeks.map((w) => {
           const h = (w.losses / maxVal) * GROUP_BAR_H;
           return (
-            <View key={w.label} style={{ flex: 1, alignItems: 'center', maxWidth: '26%' }}>
-              <View style={{ height: GROUP_BAR_H, justifyContent: 'flex-end', width: '55%' }}>
+            <Pressable
+              key={w.label}
+              accessibilityRole="button"
+              accessibilityLabel={`${w.label} perdas ${w.losses}`}
+              onPress={() => showChartValue('Perdas', w.label, w.losses)}
+              style={{ flex: 1, alignItems: 'center', maxWidth: '26%' }}
+            >
+              <View style={{ height: GROUP_BAR_H, justifyContent: 'flex-end', width: '55%', alignItems: 'center' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: t.colors.text, marginBottom: 4 }}>
+                  {w.losses}
+                </Text>
                 <View
                   style={{
+                    width: '100%',
                     height: Math.max(w.losses > 0 ? 4 : 0, h),
                     backgroundColor: t.colors.danger,
                     borderRadius: 5,
@@ -279,7 +323,7 @@ export function PerdasWeeklyBarChart({ data }: Props) {
                 />
               </View>
               <Text style={{ marginTop: 8, fontSize: 11, color: t.colors.textMuted }}>{w.label}</Text>
-            </View>
+            </Pressable>
           );
         })}
       </View>
@@ -294,11 +338,12 @@ export function MovementLineChart({ data }: Props) {
   const w = chartWidth();
   const t = useTheme();
   const chartBase = useChartBase();
+  const labels = data.movement.map((m) => m.label);
 
   return (
     <LineChart
       data={{
-        labels: data.movement.map((m) => m.label),
+        labels,
         legend: ['Entradas', 'Saídas'],
         datasets: [
           {
@@ -327,6 +372,11 @@ export function MovementLineChart({ data }: Props) {
       withInnerLines
       withVerticalLines={false}
       fromZero
+      onDataPointClick={({ index, value, dataset }) => {
+        const label = labels[index] ?? `Semana ${index + 1}`;
+        const isEntrada = dataset?.color?.(1)?.includes('34, 197, 94');
+        showChartValue(isEntrada ? 'Entradas' : 'Saídas', label, value);
+      }}
     />
   );
 }

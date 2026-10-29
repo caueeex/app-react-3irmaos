@@ -1,4 +1,5 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -20,6 +21,8 @@ import { useDashboard } from '../hooks/useDashboard';
 import type { InventoryItem } from '../types/inventory';
 import { formatDisplayDate } from '../utils/date';
 import { daysUntilExpiry } from '../utils/validity';
+
+const PAGE_SIZE = 8;
 
 const Page = styled.View`
   flex: 1;
@@ -87,12 +90,38 @@ const Chip = styled.Text`
   overflow: hidden;
 `;
 
+const PageMeta = styled.Text`
+  color: ${({ theme }) => theme.colors.textMuted};
+  font-size: 12px;
+  text-align: center;
+  margin-bottom: ${({ theme }) => theme.spacing(2)}px;
+`;
+
 export function InventoryScreen() {
   const styledTheme = useTheme();
   const tabBarHeight = useBottomTabBarHeight();
   const { draft, applied, setDraftField, applyDraft, reset } =
     useInventoryTabFilters();
   const query = useDashboard(applied);
+  const [page, setPage] = useState(0);
+
+  const allItems = query.data?.items ?? [];
+  const totalPages = Math.max(1, Math.ceil(allItems.length / PAGE_SIZE));
+
+  useEffect(() => {
+    setPage(0);
+  }, [applied, allItems.length]);
+
+  useEffect(() => {
+    if (page > totalPages - 1) {
+      setPage(Math.max(0, totalPages - 1));
+    }
+  }, [page, totalPages]);
+
+  const pageItems = useMemo(() => {
+    const start = page * PAGE_SIZE;
+    return allItems.slice(start, start + PAGE_SIZE);
+  }, [allItems, page]);
 
   const renderItem = ({ item }: { item: InventoryItem }) => {
     const dLeft = daysUntilExpiry(item.expiryDate);
@@ -116,7 +145,7 @@ export function InventoryScreen() {
   return (
     <Page>
       <FlatList
-        data={query.data?.items ?? []}
+        data={pageItems}
         keyExtractor={(it) => it.id}
         renderItem={renderItem}
         ListHeaderComponent={
@@ -174,8 +203,7 @@ export function InventoryScreen() {
             </Card>
             <Title style={{ marginTop: 16 }}>Itens</Title>
             <Sub>
-              {query.data?.items.length ?? 0} resultado(s) com os filtros
-              aplicados nesta aba.
+              {allItems.length} resultado(s) · {PAGE_SIZE} por página
             </Sub>
             {query.isPending && !query.data ? (
               <View style={{ paddingVertical: 24, alignItems: 'center' }}>
@@ -186,6 +214,37 @@ export function InventoryScreen() {
               </View>
             ) : null}
           </HeaderPad>
+        }
+        ListFooterComponent={
+          allItems.length === 0 ? null : (
+            <HeaderPad>
+              <PageMeta>
+                Página {page + 1} de {totalPages}
+              </PageMeta>
+              {totalPages > 1 ? (
+                <FilterRow style={{ marginBottom: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <Button
+                      title="Anterior"
+                      variant="secondary"
+                      disabled={page === 0}
+                      onPress={() => setPage((p) => Math.max(0, p - 1))}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Button
+                      title="Próxima"
+                      variant="secondary"
+                      disabled={page >= totalPages - 1}
+                      onPress={() =>
+                        setPage((p) => Math.min(totalPages - 1, p + 1))
+                      }
+                    />
+                  </View>
+                </FilterRow>
+              ) : null}
+            </HeaderPad>
+          )
         }
         ListEmptyComponent={
           query.isPending ? null : (

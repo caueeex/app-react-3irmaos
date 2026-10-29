@@ -1,90 +1,73 @@
-import axios from 'axios';
 import type { DashboardPayload, InventoryFilters, InventoryItem } from '../types/inventory';
 import type { ApiDashboardData } from '../types/api';
-import { clearAuthSession, getStoredToken } from './authStorage';
+import { clearAuthSession } from './authStorage';
 import { emitUnauthorized } from './authEvents';
-import { resolveApiBase } from './apiBase';
-
-const { baseURL: resolvedApiBaseURL, tunnelLikelyNeedsEnv } = resolveApiBase();
-
-if (__DEV__) {
-  console.log('[api] baseURL =', resolvedApiBaseURL, tunnelLikelyNeedsEnv ? '(tunnel: defina EXPO_PUBLIC_API_URL se o login falhar)' : '');
-}
-
-export const api = axios.create({
-  baseURL: resolvedApiBaseURL,
-  timeout: 20000,
-});
+import { getSupabaseUrl, isSupabaseConfigured, supabase } from './supabase';
+import { fetchDashboardFromSupabase } from './supabaseDashboard';
+import {
+  listarProdutosChat,
+  textoMovimentacaoMes,
+  textoMovimentacaoMesApenasTipo,
+  textoMovimentacaoMesProduto,
+  textoPerdasMes,
+  textoQuantidade,
+  textoRisco,
+} from './supabaseChat';
 
 export function getApiBaseURL(): string {
-  return resolvedApiBaseURL;
+  return getSupabaseUrl();
 }
 
 export function getApiTunnelNeedsEnvHint(): boolean {
-  return tunnelLikelyNeedsEnv;
+  return false;
 }
 
 type AuthFlowContext = 'login' | 'register';
 
-/** Mensagem amigável para falha de login/cadastro (rede vs API). */
+function supabaseErrorMessage(error: unknown): string | undefined {
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return undefined;
+}
+
+/** Mensagem amigável para falha de login/cadastro. */
 export function formatLoginOrConnectionError(
   error: unknown,
   context: AuthFlowContext = 'login',
 ): { title: string; message: string } {
   const httpTitle = context === 'register' ? 'Não foi possível cadastrar' : 'Não foi possível entrar';
 
-  if (axios.isAxiosError(error)) {
-    const status = error.response?.status;
-    const data = error.response?.data;
-    const apiErro =
-      typeof data === 'object' && data !== null && 'erro' in data && typeof (data as { erro: unknown }).erro === 'string'
-        ? (data as { erro: string }).erro
-        : typeof data === 'string'
-          ? data
-          : undefined;
+  if (!isSupabaseConfigured()) {
+    return {
+      title: 'Serviço indisponível',
+      message: 'O acesso ao sistema está temporariamente indisponível. Tente mais tarde ou fale com o administrador.',
+    };
+  }
 
-    if (error.response) {
+  const msg = supabaseErrorMessage(error);
+  if (msg) {
+    // Mensagens já amigáveis vindas do banco (login/senha, e-mail duplicado, etc.)
+    if (/e-mail ou senha|já está cadastrado|obrigatórios/i.test(msg)) {
+      return { title: httpTitle, message: msg };
+    }
+    if (/invalid.?api.?key|JWT|Unauthorized|Failed to fetch|NetworkError|network/i.test(msg)) {
       return {
-        title: httpTitle,
-        message: apiErro ?? `Resposta HTTP ${status ?? 'desconhecida'}.`,
+        title: 'Sem conexão',
+        message: 'Não foi possível conectar ao servidor. Verifique sua internet e tente de novo.',
       };
     }
-
-    const tunnelHint = tunnelLikelyNeedsEnv
-      ? '\n\nVocê está com Expo em modo tunnel: crie um arquivo .env na raiz do app com EXPO_PUBLIC_API_URL=http://SEU_IP_NA_REDE_LOCAL:3000 (ex.: ipconfig no Windows), depois reinicie o Expo (npx expo start --clear).'
-      : '';
-
     return {
-      title: 'Sem conexão com o servidor',
-      message: `O app tentou falar com:\n${resolvedApiBaseURL}\n\ne não obteve resposta (rede / firewall / backend desligado).\n\nEm dados móveis, algumas operadoras bloqueiam portas como a 3000 — experimente Wi‑Fi ou use a API em HTTPS na porta 443.${tunnelHint}`,
+      title: httpTitle,
+      message: 'Não foi possível concluir. Tente de novo ou fale com o administrador.',
     };
   }
 
   return {
-    title: 'Não foi possível entrar',
+    title: httpTitle,
     message: 'Algo inesperado aconteceu. Tente de novo.',
   };
 }
-
-api.interceptors.request.use(async (config) => {
-  const token = await getStoredToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const status = error.response?.status;
-    if (status === 401 || status === 403) {
-      await clearAuthSession();
-      emitUnauthorized();
-    }
-    return Promise.reject(error);
-  },
-);
 
 /** DD/MM/AAAA → AAAA-MM-DD (vazio se inválido). */
 function parseBrazilianDateToIso(br: string): string {
@@ -153,8 +136,7 @@ export function mapDashboardApiToPayload(data: ApiDashboardData): DashboardPaylo
         }));
 
   const lossesMonthTotal =
-    data.perdasMesTotal ??
-    movement.reduce((acc, w) => acc + w.losses, 0);
+    data.perdasMesTotal ?? movement.reduce((acc, w) => acc + w.losses, 0);
 
   return {
     items: inventarioAtivoFEFO.map(mapInventarioRow),
@@ -170,25 +152,8 @@ export function mapDashboardApiToPayload(data: ApiDashboardData): DashboardPaylo
   };
 }
 
-function buildDashboardQueryParams(filters: InventoryFilters): Record<string, string> {
-  const p: Record<string, string> = {};
-  if (filters.manufactureFrom) p.dataFabricacaoInicio = filters.manufactureFrom;
-  if (filters.manufactureTo) p.dataFabricacaoFim = filters.manufactureTo;
-  if (filters.expiryFrom) p.dataValidadeInicio = filters.expiryFrom;
-  if (filters.expiryTo) p.dataValidadeFim = filters.expiryTo;
-  const cat = filters.categoria?.trim();
-  if (cat) p.categoria = cat;
-  const lr = filters.lotOrRfid?.trim();
-  if (lr) {
-    p.lote = lr;
-    p.tagRfid = lr;
-  }
-  return p;
-}
-
 export async function fetchDashboard(filters: InventoryFilters): Promise<DashboardPayload> {
-  const params = buildDashboardQueryParams(filters);
-  const { data } = await api.get<ApiDashboardData>('/api/dashboard', { params });
+  const data = await fetchDashboardFromSupabase(filters);
   return mapDashboardApiToPayload(data);
 }
 
@@ -198,8 +163,15 @@ export type LoginResponse = {
 };
 
 export async function loginRequest(email: string, senha: string): Promise<LoginResponse> {
-  const { data } = await api.post<LoginResponse>('/api/auth/login', { email, senha });
-  return data;
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase não configurado.');
+  }
+  const { data, error } = await supabase.rpc('app_login', {
+    p_email: email.trim(),
+    p_senha: senha,
+  });
+  if (error) throw error;
+  return data as LoginResponse;
 }
 
 export type ApiPerfil = {
@@ -208,9 +180,12 @@ export type ApiPerfil = {
   descricao?: string | null;
 };
 
-/** Lista perfis (rota pública no backend) para escolha no cadastro. */
 export async function fetchPerfisPublic(): Promise<ApiPerfil[]> {
-  const { data } = await api.get<ApiPerfil[]>('/api/perfil');
+  const { data, error } = await supabase
+    .from('perfil')
+    .select('id_perfil, nome, descricao')
+    .order('id_perfil', { ascending: true });
+  if (error) throw error;
   return Array.isArray(data) ? data : [];
 }
 
@@ -225,62 +200,54 @@ export async function registerRequest(
   senha: string,
   id_perfil: number,
 ): Promise<RegisterResponse> {
-  const { data } = await api.post<RegisterResponse>('/api/auth/cadastro', {
-    nome: nome.trim(),
-    email: email.trim(),
-    senha,
-    id_perfil,
+  const { data, error } = await supabase.rpc('app_register', {
+    p_nome: nome.trim(),
+    p_email: email.trim(),
+    p_senha: senha,
+    p_id_perfil: id_perfil,
   });
-  return data;
+  if (error) throw error;
+  return data as RegisterResponse;
 }
 
 export type ChatProduto = { id_produto: number; nome: string };
 
 export async function fetchChatProdutos(): Promise<{ produtos: ChatProduto[] }> {
-  const { data } = await api.get<{ produtos: ChatProduto[] }>('/api/chat/produtos');
-  return data;
+  const produtos = await listarProdutosChat();
+  return { produtos };
 }
 
-/** Quantidade de pacotes no estoque; omita id_produto para “Geral”. */
 export async function fetchChatQuantidade(idProduto?: number): Promise<{ texto: string }> {
-  const { data } = await api.get<{ texto: string }>('/api/chat/quantidade', {
-    params:
-      idProduto === undefined ? {} : { id_produto: idProduto },
-  });
-  return data;
+  return { texto: await textoQuantidade(idProduto) };
 }
 
 export async function fetchChatRisco(): Promise<{ texto: string }> {
-  const { data } = await api.get<{ texto: string }>('/api/chat/risco');
-  return data;
+  return { texto: await textoRisco() };
 }
 
 export async function fetchChatMovimentacaoMes(): Promise<{ texto: string }> {
-  const { data } = await api.get<{ texto: string }>('/api/chat/movimentacao-mes');
-  return data;
+  return { texto: await textoMovimentacaoMes() };
 }
 
-/** Só entradas ou só saídas no mês (opção Geral no submenu por produto). */
 export async function fetchChatMovimentacaoMesTipo(
   tipo: 'ENTRADA' | 'SAÍDA',
 ): Promise<{ texto: string }> {
-  const { data } = await api.get<{ texto: string }>('/api/chat/movimentacao-mes/tipo', {
-    params: { tipo },
-  });
-  return data;
+  return { texto: await textoMovimentacaoMesApenasTipo(tipo) };
 }
 
 export async function fetchChatMovimentacaoMesProduto(
   tipo: 'ENTRADA' | 'SAÍDA',
   idProduto: number,
 ): Promise<{ texto: string }> {
-  const { data } = await api.get<{ texto: string }>('/api/chat/movimentacao-mes/produto', {
-    params: { tipo, id_produto: idProduto },
-  });
-  return data;
+  return { texto: await textoMovimentacaoMesProduto(tipo, idProduto) };
 }
 
 export async function fetchChatPerdasMes(): Promise<{ texto: string }> {
-  const { data } = await api.get<{ texto: string }>('/api/chat/perdas-mes');
-  return data;
+  return { texto: await textoPerdasMes() };
+}
+
+/** Mantido para chamadas legadas; com Supabase direto não há 401 HTTP. */
+export async function forceLogoutOnAuthFailure(): Promise<void> {
+  await clearAuthSession();
+  emitUnauthorized();
 }

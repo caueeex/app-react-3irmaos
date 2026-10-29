@@ -289,8 +289,8 @@ export function ChatbotScreen() {
       await exportMovimentacaoExcelToShareSheet(excelExportContext);
     } catch (e) {
       const msg =
-        e instanceof Error ? e.message : 'Não foi possível gerar o Excel. Tente de novo.';
-      Alert.alert('Exportar Excel', msg);
+        e instanceof Error ? e.message : 'Não foi possível gerar o CSV. Tente de novo.';
+      Alert.alert('Exportar planilha', msg);
     } finally {
       setExportingExcel(false);
     }
@@ -304,18 +304,22 @@ export function ChatbotScreen() {
 
   const loadProdutosAndShowPicker = useCallback(
     async (mode: 'quantidade' | MovTipo) => {
-      setExcelExportContext(null);
       setLoadingInsight(true);
       try {
         const { produtos: list } = await fetchChatProdutos();
         setProdutos(list);
-        if (mode === 'quantidade') setPhase('pick_prod_quantidade');
-        else {
+        if (mode === 'quantidade') {
+          setPhase('pick_prod_quantidade');
+          // Exportar daqui gera inventário (não movimentações vazias).
+          setExcelExportContext({ escopo: 'estoque' });
+        } else {
           setMovTipo(mode);
           setPhase('pick_prod_mov');
+          setExcelExportContext({ tipo: mode, escopo: 'movimentacao' });
         }
         pushAssistant(buildProductPickerText(list));
       } catch {
+        setExcelExportContext(null);
         pushAssistant('Não foi possível carregar a lista de produtos. Tente de novo.');
       } finally {
         setLoadingInsight(false);
@@ -331,8 +335,9 @@ export function ChatbotScreen() {
       try {
         if (num === 1) {
           const { texto } = await fetchChatQuantidade();
-          pushAssistant(texto);
-          setExcelExportContext(null);
+          pushAssistant(`${texto}\n\n${buildExportFooter()}`);
+          // Quantidade → exporta inventário (pacotes), não movimentações do mês.
+          setExcelExportContext({ escopo: 'estoque' });
         } else {
           const p = produtos[num - 2];
           if (!p) {
@@ -340,8 +345,8 @@ export function ChatbotScreen() {
             return;
           }
           const { texto } = await fetchChatQuantidade(p.id_produto);
-          pushAssistant(texto);
-          setExcelExportContext({ idProduto: p.id_produto });
+          pushAssistant(`${texto}\n\n${buildExportFooter()}`);
+          setExcelExportContext({ idProduto: p.id_produto, escopo: 'estoque' });
         }
         setPhase('post_reply');
       } catch {
@@ -362,7 +367,7 @@ export function ChatbotScreen() {
         if (num === 1) {
           const { texto } = await fetchChatMovimentacaoMesTipo(movTipo);
           pushAssistant(texto);
-          setExcelExportContext({ tipo: movTipo });
+          setExcelExportContext({ tipo: movTipo, escopo: 'movimentacao' });
         } else {
           const p = produtos[num - 2];
           if (!p) {
@@ -373,7 +378,7 @@ export function ChatbotScreen() {
           }
           const { texto } = await fetchChatMovimentacaoMesProduto(movTipo, p.id_produto);
           pushAssistant(texto);
-          setExcelExportContext({ idProduto: p.id_produto, tipo: movTipo });
+          setExcelExportContext({ idProduto: p.id_produto, tipo: movTipo, escopo: 'movimentacao' });
         }
         setPhase('post_reply');
       } catch {
@@ -473,7 +478,7 @@ export function ChatbotScreen() {
         return;
       }
       if (t === '*' || t.startsWith('*')) {
-        pushUser('Exportar Excel');
+        pushUser('Exportar planilha');
         await runExportExcel();
         return;
       }
@@ -502,7 +507,7 @@ export function ChatbotScreen() {
         return;
       }
       if (t === '*' || t.startsWith('*')) {
-        pushUser('Exportar Excel');
+        pushUser('Exportar planilha');
         await runExportExcel();
         return;
       }
@@ -536,11 +541,11 @@ export function ChatbotScreen() {
         return;
       }
       if (t === '*' || t.startsWith('*')) {
-        pushUser('Exportar Excel');
+        pushUser('Exportar planilha');
         void runExportExcel();
         return;
       }
-      Alert.alert('Opção inválida', 'Use 0 para voltar ao menu ou * para exportar Excel.');
+      Alert.alert('Opção inválida', 'Use 0 para voltar ao menu ou * para exportar planilha.');
     },
     [pushUser, goMainMenu, runExportExcel],
   );
@@ -629,7 +634,7 @@ export function ChatbotScreen() {
     }
     if (phase === 'mov_actions') {
       return [
-        { key: '*', label: 'Exportar Excel' },
+        { key: '*', label: 'Exportar planilha' },
         { key: '0', label: 'Voltar' },
         { key: '1', label: '1 · Entradas por produto' },
         { key: '2', label: '2 · Saídas por produto' },
@@ -637,14 +642,14 @@ export function ChatbotScreen() {
     }
     if (phase === 'pick_prod_quantidade' || phase === 'pick_prod_mov') {
       return [
-        { key: '*', label: 'Exportar Excel' },
+        { key: '*', label: 'Exportar planilha' },
         { key: '0', label: 'Voltar' },
         { key: '1', label: '1 · Geral' },
       ];
     }
     if (phase === 'post_reply') {
       return [
-        { key: '*', label: 'Exportar Excel' },
+        { key: '*', label: 'Exportar planilha' },
         { key: '0', label: 'Voltar' },
       ];
     }
@@ -656,7 +661,7 @@ export function ChatbotScreen() {
       ? '1–4 (menu)…'
       : phase === 'pick_prod_quantidade' || phase === 'pick_prod_mov'
         ? 'Número do produto, 0 ou *…'
-        : 'Número, 0 ou * (Excel)…';
+        : 'Número, 0 ou * (planilha)…';
 
   const showProductPicker =
     (phase === 'pick_prod_quantidade' || phase === 'pick_prod_mov') && produtos.length > 0;
@@ -697,7 +702,7 @@ export function ChatbotScreen() {
               <LoadingRow accessibilityLiveRegion="polite">
                 <ActivityIndicator color={theme.colors.primary} />
                 <LoadingText>
-                  {exportingExcel ? 'Gerando Excel…' : 'Consultando dados do sistema…'}
+                  {exportingExcel ? 'Gerando planilha…' : 'Consultando dados do sistema…'}
                 </LoadingText>
               </LoadingRow>
             ) : null}
@@ -709,7 +714,7 @@ export function ChatbotScreen() {
                   onPress={() => onChip(c.key)}
                   accessibilityRole="button"
                   accessibilityLabel={
-                    c.key === '*' ? 'Exportar planilha Excel' : c.label
+                    c.key === '*' ? 'Exportar planilha CSV' : c.label
                   }
                 >
                   <ChipInner>
